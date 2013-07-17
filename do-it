@@ -1,0 +1,9 @@
+#!/bin/sh
+
+#aclocal
+#autoheader
+#autoreconf
+#automake --add-missing
+#libtoolize
+autoreconf
+./configure --prefix=$HOME --enable-debug
