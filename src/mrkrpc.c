@@ -318,8 +318,8 @@ pack_queue_entry(mrkrpc_queue_entry_t *qe)
     TRRET(0);
 }
 
-void
-mrkrpc_queue_entry_enqueue(mrkrpc_queue_t *queue, mrkrpc_queue_entry_t *qe)
+static void
+queue_entry_enqueue(mrkrpc_queue_t *queue, mrkrpc_queue_entry_t *qe)
 {
     /* tail push */
     qe->next = NULL;
@@ -634,7 +634,7 @@ recvthr_loop(int argc, void *argv[])
                 if (ope->reqhandler != NULL) {
                     ope->reqhandler(ctx, qe);
                 }
-                mrkrpc_queue_entry_enqueue(&ctx->sendq, qe);
+                queue_entry_enqueue(&ctx->sendq, qe);
             }
         }
 CONTINUE:
@@ -682,7 +682,7 @@ mrkrpc_call(mrkrpc_ctx_t *ctx,
     }
     trn->value = qe;
 
-    mrkrpc_queue_entry_enqueue(&ctx->sendq, qe);
+    queue_entry_enqueue(&ctx->sendq, qe);
 
     /*
      * fall asleep until we receive response

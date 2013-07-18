@@ -7,6 +7,7 @@
 
 #include <mrkcommon/array.h>
 #include <mrkcommon/trie.h>
+#include <mrkthr.h>
 #include <mrkdata.h>
 
 #ifdef __cplusplus
@@ -105,8 +106,6 @@ int mrkrpc_call(mrkrpc_ctx_t *,
                 mrkdata_datum_t **);
 int mrkrpc_serve(mrkrpc_ctx_t *);
 
-/* queue */
-void mrkrpc_queue_entry_enqueue(mrkrpc_queue_t *, mrkrpc_queue_entry_t *);
 #ifdef __cplusplus
 }
 #endif
