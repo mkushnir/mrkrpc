@@ -573,21 +573,23 @@ recvthr_loop(int argc, void *argv[])
                        qe->op);
 
             } else {
-                if ((ndecoded = mrkdata_unpack_buf(ope->respspec,
-                                                   pbuf,
-                                                   nread,
-                                                   &qe->recvdat)) == 0) {
-                    CTRACE("mrkdata_unpack_buf failure, resp:");
-                    mrkdata_spec_dump(ope->respspec);
-                    D16(pbuf, nread);
-                    if (qe->recvdat != NULL) {
-                        free(qe->recvdat);
-                        qe->recvdat = NULL;
-                        goto CONTINUE;
+                if (ope->respspec != NULL) {
+                    if ((ndecoded = mrkdata_unpack_buf(ope->respspec,
+                                                       pbuf,
+                                                       nread,
+                                                       &qe->recvdat)) == 0) {
+                        CTRACE("mrkdata_unpack_buf failure, resp:");
+                        mrkdata_spec_dump(ope->respspec);
+                        D16(pbuf, nread);
+                        if (qe->recvdat != NULL) {
+                            free(qe->recvdat);
+                            qe->recvdat = NULL;
+                            goto CONTINUE;
+                        }
                     }
+                    pbuf += ndecoded;
+                    nread -= ndecoded;
                 }
-                pbuf += ndecoded;
-                nread -= ndecoded;
 
                 //CTRACE("nread=%ld recvdat", nread);
 
@@ -636,20 +638,22 @@ recvthr_loop(int argc, void *argv[])
                  */
                 mrkthr_signal_fini(&qe->signal);
 
-                if ((ndecoded = mrkdata_unpack_buf(ope->reqspec,
-                                                   pbuf,
-                                                   nread,
-                                                   &qe->recvdat)) == 0) {
-                    CTRACE("mrkdata_unpack_buf failure, req:");
-                    D16(pbuf, nread);
-                    if (req != NULL) {
-                        free(req);
-                        req = NULL;
-                        goto CONTINUE;
+                if (ope->reqspec != NULL) {
+                    if ((ndecoded = mrkdata_unpack_buf(ope->reqspec,
+                                                       pbuf,
+                                                       nread,
+                                                       &qe->recvdat)) == 0) {
+                        CTRACE("mrkdata_unpack_buf failure, req:");
+                        D16(pbuf, nread);
+                        if (req != NULL) {
+                            free(req);
+                            req = NULL;
+                            goto CONTINUE;
+                        }
                     }
+                    pbuf += ndecoded;
+                    nread -= ndecoded;
                 }
-                pbuf += ndecoded;
-                nread -= ndecoded;
 
                 //CTRACE("nread=%ld recvdat", nread);
 
@@ -755,7 +759,7 @@ mrkrpc_ctx_init(mrkrpc_ctx_t *ctx)
     ctx->fd = -1;
 
     /* ops */
-    if (array_init(&ctx->ops, sizeof(mrkrpc_op_entry_t *), MRKRPC_MAX_OPS,
+    if (array_init(&ctx->ops, sizeof(mrkrpc_op_entry_t), MRKRPC_MAX_OPS,
                    (array_initializer_t)null_init,
                    (array_finalizer_t)null_fini) != 0) {
         FAIL("array_init");
@@ -889,30 +893,38 @@ mrkrpc_ctx_set_me(mrkrpc_ctx_t *ctx,
 
 
 int
-mrkrpc_ctx_register_op(mrkrpc_ctx_t *ctx, uint8_t op, mrkrpc_op_entry_t *ope)
+mrkrpc_ctx_register_op(mrkrpc_ctx_t *ctx,
+                       uint8_t op,
+                       mrkdata_spec_t *reqspec,
+                       mrkrpc_recv_handler_t reqhandler,
+                       mrkdata_spec_t *respspec,
+                       mrkrpc_recv_handler_t resphandler)
 {
-    mrkrpc_op_entry_t **p;
+    mrkrpc_op_entry_t *ope;
 
     assert(op < MRKRPC_MAX_OPS);
 
-    if ((p = array_get(&ctx->ops, op)) == NULL) {
+    if ((ope = array_get(&ctx->ops, op)) == NULL) {
         FAIL("array_get");
     }
-    *p = ope;
+    ope->reqspec = reqspec;
+    ope->reqhandler = reqhandler;
+    ope->respspec = respspec;
+    ope->resphandler = resphandler;
     return 0;
 }
 
 mrkrpc_op_entry_t *
 mrkrpc_ctx_get_op(mrkrpc_ctx_t *ctx, uint8_t op)
 {
-    mrkrpc_op_entry_t **p;
+    mrkrpc_op_entry_t *p;
 
     assert(op < MRKRPC_MAX_OPS);
 
     if ((p = array_get(&ctx->ops, op)) == NULL) {
         return NULL;
     }
-    return *p;
+    return p;
 }
 
 

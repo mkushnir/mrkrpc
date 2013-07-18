@@ -85,7 +85,12 @@ void mrkrpc_fini(void);
 int mrkrpc_ctx_init(mrkrpc_ctx_t *);
 int mrkrpc_ctx_fini(mrkrpc_ctx_t *);
 int mrkrpc_ctx_set_me(mrkrpc_ctx_t *, uint64_t, const char *, int);
-int mrkrpc_ctx_register_op(mrkrpc_ctx_t *, uint8_t, mrkrpc_op_entry_t *);
+int mrkrpc_ctx_register_op(mrkrpc_ctx_t *,
+                           uint8_t,
+                           mrkdata_spec_t *,
+                           mrkrpc_recv_handler_t,
+                           mrkdata_spec_t *,
+                           mrkrpc_recv_handler_t);
 mrkrpc_op_entry_t *mrkrpc_ctx_get_op(mrkrpc_ctx_t *, uint8_t);
 
 /* node */

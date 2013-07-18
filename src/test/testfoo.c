@@ -51,18 +51,16 @@ static int
 listener(UNUSED int argc, UNUSED void *argv[])
 {
     mrkrpc_ctx_t ctx;
-    mrkrpc_op_entry_t op;
-
-    op.reqspec = mrkdata_make_spec(MRKDATA_UINT64);
-    op.reqhandler = my_handler;
-    op.respspec = mrkdata_make_spec(MRKDATA_UINT64);
-    op.resphandler = NULL;
 
     if (mrkrpc_ctx_init(&ctx) != 0) {
         assert(0);
     }
 
-    mrkrpc_ctx_register_op(&ctx, 123, &op);
+    mrkrpc_ctx_register_op(&ctx, 123,
+                           mrkdata_make_spec(MRKDATA_UINT64),
+                           my_handler,
+                           mrkdata_make_spec(MRKDATA_UINT64),
+                           NULL);
 
     if (mrkrpc_ctx_set_me(&ctx, 0x1235, "localhost", 0x1235) != 0) {
         assert(0);
@@ -100,18 +98,16 @@ test2(void)
     mrkdata_datum_t *rv = NULL;
     mrkrpc_node_t *rcpt;
 
-    mrkrpc_op_entry_t op;
-
-    op.reqspec = mrkdata_make_spec(MRKDATA_UINT64);
-    op.reqhandler = my_handler;
-    op.respspec = mrkdata_make_spec(MRKDATA_UINT64);
-    op.resphandler = NULL;
-
     if (mrkrpc_ctx_init(&ctx) != 0) {
         assert(0);
     }
 
-    mrkrpc_ctx_register_op(&ctx, 123, &op);
+    mrkrpc_ctx_register_op(&ctx, 123,
+                           mrkdata_make_spec(MRKDATA_UINT64),
+                           my_handler,
+                           mrkdata_make_spec(MRKDATA_UINT64),
+                           NULL);
+
 
     if (mrkrpc_ctx_set_me(&ctx, 0x1234, "localhost", 0x1234) != 0) {
         assert(0);
