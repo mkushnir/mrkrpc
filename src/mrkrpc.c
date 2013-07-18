@@ -659,7 +659,8 @@ int
 mrkrpc_call(mrkrpc_ctx_t *ctx,
             mrkrpc_node_t *to,
             UNUSED uint8_t op,
-            mrkdata_datum_t *arg)
+            mrkdata_datum_t *arg,
+            mrkdata_datum_t **rv)
 {
     int res = 0;
     mrkrpc_queue_entry_t *qe = NULL;
@@ -691,23 +692,14 @@ mrkrpc_call(mrkrpc_ctx_t *ctx,
 
     /* response */
 
-    CTRACE("Received from:");
-    if (qe->peer != NULL) {
-        mrkrpc_node_dump(qe->peer);
-        if (qe->recvdat != NULL) {
-            CTRACE("Return value:");
-            mrkdata_datum_dump(qe->recvdat);
-        } else {
-            TRACE("qe->recvdat is NULL");
-        }
-    } else {
+    if (qe->peer == NULL) {
         res = MRKRPC_CALL + 1;
     }
 
     /*
      * qe->recvdat is a return value. We should return it back to the caller.
      */
-    mrkdata_datum_destroy(&qe->recvdat);
+    *rv = qe->recvdat;
     queue_entry_destroy(&qe);
 
     TRRET(res);

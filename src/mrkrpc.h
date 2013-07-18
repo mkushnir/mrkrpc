@@ -98,7 +98,11 @@ void mrkrpc_node_destroy(mrkrpc_node_t **);
 
 /* operations */
 int mrkrpc_run(mrkrpc_ctx_t *);
-int mrkrpc_call(mrkrpc_ctx_t *, mrkrpc_node_t *, uint8_t, mrkdata_datum_t *);
+int mrkrpc_call(mrkrpc_ctx_t *,
+                mrkrpc_node_t *,
+                uint8_t,
+                mrkdata_datum_t *,
+                mrkdata_datum_t **);
 int mrkrpc_serve(mrkrpc_ctx_t *);
 
 /* queue */

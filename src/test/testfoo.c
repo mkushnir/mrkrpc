@@ -98,6 +98,7 @@ test2(void)
     mrkrpc_ctx_t ctx;
     mrkdata_spec_t *spec;
     mrkdata_datum_t *dat;
+    mrkdata_datum_t *rv = NULL;
     mrkrpc_node_t *rcpt;
 
     mrkrpc_op_entry_t op;
@@ -127,8 +128,15 @@ test2(void)
     rcpt = mrkrpc_make_node(0x1235, "localhost", 0x1235);
 
     for (i = 0; i < 3; ++i) {
+        int res;
+
         dat->value.u64++;
-        mrkrpc_call(&ctx, rcpt, 123, dat);
+        res = mrkrpc_call(&ctx, rcpt, 123, dat, &rv);
+        CTRACE("Received (res=%d):", res);
+        if (rv != NULL) {
+            mrkdata_datum_dump(rv);
+        }
+        mrkdata_datum_destroy(&rv);
     }
 
     mrkdata_datum_destroy(&dat);
