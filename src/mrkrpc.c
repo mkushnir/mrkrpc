@@ -25,7 +25,7 @@ MEMDEBUG_DECLARE(mrkrpc);
 static unsigned mflags = 0;
 
 #define MRKRPC_VERSION 0x81
-#define MRKRPC_MAX_OPS 256 /* uint8_t */
+#define MRKRPC_MAX_MSGS 256 /* uint8_t */
 #define QUEUE_ENTRY_DEFAULT_BUFSZ 1024
 #define NODE_DEFAULT_ADDRLEN 256
 
@@ -225,6 +225,8 @@ queue_entry_init(mrkrpc_queue_entry_t *e,
     e->buf = NULL;
     e->sz = 0;
     e->recvdat = NULL;
+    e->res = 0;
+    e->next = NULL;
 }
 
 static void
@@ -241,6 +243,7 @@ queue_entry_fini(mrkrpc_queue_entry_t *e)
     }
     e->sz = 0;
     e->recvdat = NULL;
+    e->res = 0;
     e->next = NULL;
 }
 
@@ -299,7 +302,8 @@ pack_queue_entry(mrkrpc_queue_entry_t *qe)
     }
 
     if (qe->senddat != NULL) {
-        if ((qe->buf = malloc(header->packsz + qe->senddat->packsz)) == NULL) {
+        if ((qe->buf = malloc(header->packsz +
+                              qe->senddat->packsz)) == NULL) {
             FAIL("malloc");
         }
 
@@ -401,7 +405,7 @@ sendthr_loop(int argc, void *argv[])
 
         if (pack_queue_entry(qe) != 0) {
             CTRACE("pack_queue_entry failure");
-            qe->peer = NULL;
+            qe->res = SENDTHR_LOOP + 1;
             mrkthr_signal_send(&qe->signal);
             continue;
         }
@@ -469,10 +473,6 @@ recvthr_loop(int argc, void *argv[])
             break;
         }
 
-        //CTRACE("calculated_default_message_sz=%ld", calculated_default_message_sz);
-        //CTRACE("nread=%ld recvfrom", nread);
-        //D8(buf, nread);
-
         pbuf = (unsigned char *)buf;
 
         /* unpack header */
@@ -538,7 +538,7 @@ recvthr_loop(int argc, void *argv[])
 
         if ((trn = trie_find_exact(&ctx->pending, sid->value.u64)) != NULL) {
             mrkrpc_queue_entry_t *qe;
-            mrkrpc_op_entry_t *ope;
+            mrkrpc_msg_entry_t *msge;
 
             assert(trn->value != NULL);
 
@@ -566,20 +566,20 @@ recvthr_loop(int argc, void *argv[])
              */
 
             /* complete request operation */
-            if ((ope = mrkrpc_ctx_get_op(ctx, op->value.u8)) == NULL) {
+            if ((msge = mrkrpc_ctx_get_msg(ctx, op->value.u8)) == NULL) {
                 /* XXX any indication to the sender? */
                 CTRACE("op is not supported: %02x, original op was: %02x",
                        op->value.u8,
                        qe->op);
 
             } else {
-                if (ope->respspec != NULL) {
-                    if ((ndecoded = mrkdata_unpack_buf(ope->respspec,
+                if (msge->respspec != NULL) {
+                    if ((ndecoded = mrkdata_unpack_buf(msge->respspec,
                                                        pbuf,
                                                        nread,
                                                        &qe->recvdat)) == 0) {
                         CTRACE("mrkdata_unpack_buf failure, resp:");
-                        mrkdata_spec_dump(ope->respspec);
+                        mrkdata_spec_dump(msge->respspec);
                         D16(pbuf, nread);
                         if (qe->recvdat != NULL) {
                             free(qe->recvdat);
@@ -594,8 +594,8 @@ recvthr_loop(int argc, void *argv[])
                 //CTRACE("nread=%ld recvdat", nread);
 
                 /* optional post-procesing */
-                if (ope->resphandler != NULL) {
-                    ope->resphandler(ctx, qe);
+                if (msge->resphandler != NULL) {
+                    msge->resphandler(ctx, qe);
                 }
             }
 
@@ -608,7 +608,7 @@ recvthr_loop(int argc, void *argv[])
 
         } else {
             mrkdata_datum_t *req = NULL;
-            mrkrpc_op_entry_t *ope;
+            mrkrpc_msg_entry_t *msge;
             mrkrpc_queue_entry_t *qe;
             mrkrpc_node_t *from;
 
@@ -616,7 +616,7 @@ recvthr_loop(int argc, void *argv[])
              * Here is an incoming request.
              */
 
-            if ((ope = mrkrpc_ctx_get_op(ctx, op->value.u8)) == NULL) {
+            if ((msge = mrkrpc_ctx_get_msg(ctx, op->value.u8)) == NULL) {
                 CTRACE("op is not supported: %02x", op->value.u8);
 
             } else {
@@ -638,8 +638,8 @@ recvthr_loop(int argc, void *argv[])
                  */
                 mrkthr_signal_fini(&qe->signal);
 
-                if (ope->reqspec != NULL) {
-                    if ((ndecoded = mrkdata_unpack_buf(ope->reqspec,
+                if (msge->reqspec != NULL) {
+                    if ((ndecoded = mrkdata_unpack_buf(msge->reqspec,
                                                        pbuf,
                                                        nread,
                                                        &qe->recvdat)) == 0) {
@@ -662,8 +662,8 @@ recvthr_loop(int argc, void *argv[])
                  * the place where qe->recvdat has to be analyzed and the
                  * response has to be constructed and placed in qe->senddat.
                  */
-                if (ope->reqhandler != NULL) {
-                    ope->reqhandler(ctx, qe);
+                if (msge->reqhandler != NULL) {
+                    msge->reqhandler(ctx, qe);
                 }
                 queue_entry_enqueue(&ctx->sendq, qe);
             }
@@ -723,14 +723,11 @@ mrkrpc_call(mrkrpc_ctx_t *ctx,
 
     /* response */
 
-    if (qe->peer == NULL) {
-        res = MRKRPC_CALL + 1;
-    }
-
     /*
      * qe->recvdat is a return value. We should return it back to the caller.
      */
     *rv = qe->recvdat;
+    res = qe->res;
     queue_entry_destroy(&qe);
 
     TRRET(res);
@@ -759,7 +756,7 @@ mrkrpc_ctx_init(mrkrpc_ctx_t *ctx)
     ctx->fd = -1;
 
     /* ops */
-    if (array_init(&ctx->ops, sizeof(mrkrpc_op_entry_t), MRKRPC_MAX_OPS,
+    if (array_init(&ctx->ops, sizeof(mrkrpc_msg_entry_t), MRKRPC_MAX_MSGS,
                    (array_initializer_t)null_init,
                    (array_finalizer_t)null_fini) != 0) {
         FAIL("array_init");
@@ -893,33 +890,33 @@ mrkrpc_ctx_set_me(mrkrpc_ctx_t *ctx,
 
 
 int
-mrkrpc_ctx_register_op(mrkrpc_ctx_t *ctx,
+mrkrpc_ctx_register_msg(mrkrpc_ctx_t *ctx,
                        uint8_t op,
                        mrkdata_spec_t *reqspec,
                        mrkrpc_recv_handler_t reqhandler,
                        mrkdata_spec_t *respspec,
                        mrkrpc_recv_handler_t resphandler)
 {
-    mrkrpc_op_entry_t *ope;
+    mrkrpc_msg_entry_t *msge;
 
-    assert(op < MRKRPC_MAX_OPS);
+    assert(op < MRKRPC_MAX_MSGS);
 
-    if ((ope = array_get(&ctx->ops, op)) == NULL) {
+    if ((msge = array_get(&ctx->ops, op)) == NULL) {
         FAIL("array_get");
     }
-    ope->reqspec = reqspec;
-    ope->reqhandler = reqhandler;
-    ope->respspec = respspec;
-    ope->resphandler = resphandler;
+    msge->reqspec = reqspec;
+    msge->reqhandler = reqhandler;
+    msge->respspec = respspec;
+    msge->resphandler = resphandler;
     return 0;
 }
 
-mrkrpc_op_entry_t *
-mrkrpc_ctx_get_op(mrkrpc_ctx_t *ctx, uint8_t op)
+mrkrpc_msg_entry_t *
+mrkrpc_ctx_get_msg(mrkrpc_ctx_t *ctx, uint8_t op)
 {
-    mrkrpc_op_entry_t *p;
+    mrkrpc_msg_entry_t *p;
 
-    assert(op < MRKRPC_MAX_OPS);
+    assert(op < MRKRPC_MAX_MSGS);
 
     if ((p = array_get(&ctx->ops, op)) == NULL) {
         return NULL;
@@ -940,7 +937,11 @@ mrkrpc_init(void)
         return;
     }
 
-    sidbase = (((uint64_t)random()) << 32) | ((uint64_t)random());
+    /*
+     * High 32 bits of sid will be random. Low 32 bits will be
+     * incrementing.
+     */
+    sidbase = (((uint64_t)random()) << 32);
 
     MEMDEBUG_REGISTER(mrkrpc);
 

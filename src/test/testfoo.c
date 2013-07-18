@@ -56,7 +56,7 @@ listener(UNUSED int argc, UNUSED void *argv[])
         assert(0);
     }
 
-    mrkrpc_ctx_register_op(&ctx, 123,
+    mrkrpc_ctx_register_msg(&ctx, 123,
                            mrkdata_make_spec(MRKDATA_UINT64),
                            my_handler,
                            mrkdata_make_spec(MRKDATA_UINT64),
@@ -102,7 +102,7 @@ test2(void)
         assert(0);
     }
 
-    mrkrpc_ctx_register_op(&ctx, 123,
+    mrkrpc_ctx_register_msg(&ctx, 123,
                            mrkdata_make_spec(MRKDATA_UINT64),
                            my_handler,
                            mrkdata_make_spec(MRKDATA_UINT64),

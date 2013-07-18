@@ -40,6 +40,8 @@ typedef struct _mrkrpc_queue_entry {
     mrkdata_datum_t *recvdat;
 
     mrkthr_signal_t signal;
+    /* mrkrpc_call() return value */
+    int res;
 
     struct _mrkrpc_queue_entry *next;
 } mrkrpc_queue_entry_t;
@@ -55,12 +57,12 @@ struct _mrkrpc_ctx;
 typedef void (*mrkrpc_recv_handler_t)(struct _mrkrpc_ctx *,
                                       mrkrpc_queue_entry_t *);
 
-typedef struct _mrkrpc_op_entry {
+typedef struct _mrkrpc_msg_entry {
     mrkdata_spec_t *reqspec;
     mrkrpc_recv_handler_t reqhandler;
     mrkdata_spec_t *respspec;
     mrkrpc_recv_handler_t resphandler;
-} mrkrpc_op_entry_t;
+} mrkrpc_msg_entry_t;
 
 typedef struct _mrkrpc_ctx {
     mrkrpc_node_t me;
@@ -85,13 +87,13 @@ void mrkrpc_fini(void);
 int mrkrpc_ctx_init(mrkrpc_ctx_t *);
 int mrkrpc_ctx_fini(mrkrpc_ctx_t *);
 int mrkrpc_ctx_set_me(mrkrpc_ctx_t *, uint64_t, const char *, int);
-int mrkrpc_ctx_register_op(mrkrpc_ctx_t *,
+int mrkrpc_ctx_register_msg(mrkrpc_ctx_t *,
                            uint8_t,
                            mrkdata_spec_t *,
                            mrkrpc_recv_handler_t,
                            mrkdata_spec_t *,
                            mrkrpc_recv_handler_t);
-mrkrpc_op_entry_t *mrkrpc_ctx_get_op(mrkrpc_ctx_t *, uint8_t);
+mrkrpc_msg_entry_t *mrkrpc_ctx_get_msg(mrkrpc_ctx_t *, uint8_t);
 
 /* node */
 int mrkrpc_node_init(mrkrpc_node_t *);
