@@ -184,6 +184,21 @@ mrkrpc_make_node(uint64_t nid, const char *hostname, int port)
 }
 
 void
+mrkrpc_node_copy(mrkrpc_node_t *dst, mrkrpc_node_t *src)
+{
+    dst->nid = src->nid;
+    if ((dst->hostname = strdup(src->hostname)) == NULL) {
+        FAIL("strdup");
+    }
+    if ((dst->addr = malloc(src->addrlen)) == NULL) {
+        FAIL("nallos");
+    }
+    memcpy(dst->addr, src->addr, src->addrlen);
+    dst->addrlen = src->addrlen;
+}
+
+
+void
 mrkrpc_node_destroy(mrkrpc_node_t **node)
 {
     if (*node != NULL) {

@@ -95,6 +95,7 @@ int mrkrpc_node_dump(mrkrpc_node_t *);
 mrkrpc_node_t *mrkrpc_make_node(uint64_t, const char *, int);
 mrkrpc_node_t *mrkrpc_make_node_from_addr(uint64_t, const struct sockaddr *, socklen_t);
 void mrkrpc_node_destroy(mrkrpc_node_t **);
+void mrkrpc_node_copy(mrkrpc_node_t *, mrkrpc_node_t *);
 
 
 /* operations */

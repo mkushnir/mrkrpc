@@ -88,7 +88,6 @@ test1(void)
         assert(0);
     }
     mrkthr_run(listener_ctx);
-    //mrkthr_sleep(500);
 }
 
 static void
