@@ -2,10 +2,11 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
-#include <netinet/in.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <netinet/in.h>
 #include <netdb.h>
+#include <arpa/inet.h>
 
 #include <mrkcommon/array.h>
 //#define TRRET_DEBUG_VERBOSE
@@ -89,7 +90,18 @@ mrkrpc_node_fini(mrkrpc_node_t *node)
 int
 mrkrpc_node_dump(mrkrpc_node_t *node)
 {
-    CTRACE("<node nid=%016lx @ %s:%d>", node->nid, node->hostname, node->port);
+    char buf[256];
+    struct sockaddr_in *a;
+
+    a = ((struct sockaddr_in *)(node->addr));
+
+    assert(sizeof(buf) >= a->sin_len);
+
+    CTRACE("<node nid=%016lx @ %s:%d>",
+           node->nid,
+           inet_ntop(a->sin_family, &a->sin_addr, buf, a->sin_len),
+           ntohs(a->sin_port));
+
     return 0;
 }
 
@@ -837,6 +849,12 @@ mrkrpc_ctx_set_me(mrkrpc_ctx_t *ctx,
                               ain->ai_protocol)) < 0) {
             continue;
         }
+
+        if ((ctx->me.addr = malloc(ain->ai_addrlen)) == NULL) {
+            FAIL("malloc");
+        }
+        memcpy(ctx->me.addr, ain->ai_addr, ain->ai_addrlen);
+        ctx->me.addrlen = ain->ai_addrlen;
 
         if (bind(ctx->fd, ain->ai_addr, ain->ai_addrlen) != 0) {
             TRRET(MRKRPC_CTX_SET_ME + 2);
