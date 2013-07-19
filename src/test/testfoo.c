@@ -36,7 +36,7 @@ test0(void)
     }
 }
 
-static void
+static int
 my_handler(UNUSED mrkrpc_ctx_t *ctx,
            UNUSED mrkrpc_queue_entry_t *qe)
 {
@@ -45,6 +45,7 @@ my_handler(UNUSED mrkrpc_ctx_t *ctx,
     //mrkdata_datum_dump(qe->recvdat);
     qe->senddat = qe->recvdat;
     qe->recvdat = NULL;
+    return 0;
 }
 
 static int

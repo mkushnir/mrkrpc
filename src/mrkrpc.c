@@ -22,7 +22,10 @@ MEMDEBUG_DECLARE(mrkrpc);
 #include "diag.h"
 
 #define MRKRPC_MFLAG_INITIALIZED (0x01)
+#define MRKRPC_MFLAG_SHUTDOWN (0x02)
 static unsigned mflags = 0;
+
+#define MRKRPC_PENDING_TRIE_VOLUME_THRESHOLD 50000
 
 #define MRKRPC_VERSION 0x81
 #define MRKRPC_MAX_MSGS 256 /* uint8_t */
@@ -37,12 +40,13 @@ static mrkdata_spec_t *header_spec;
 static size_t calculated_default_message_sz;
 
 static uint64_t sidbase;
-static uint64_t sid = 0;
+UNUSED static uint64_t sid = 0;
 
 static uint64_t
 new_sid(void)
 {
-    return ++sid ^ sidbase;
+    return (((uint64_t)random()) << 32) | random();
+    //return ++sid ^ sidbase;
 }
 
 static int
@@ -58,6 +62,35 @@ null_fini(void **p)
     *p = NULL;
     return 0;
 }
+
+/* monitor */
+
+UNUSED int
+monitor(int argc, void **argv)
+{
+    mrkrpc_ctx_t *ctx;
+
+    assert(argc == 1);
+    ctx = argv[0];
+
+    while (!(mflags & MRKRPC_MFLAG_SHUTDOWN)) {
+        size_t volume, nelems;
+
+        volume = trie_get_volume(&ctx->pending);
+        nelems = trie_get_nelems(&ctx->pending);
+
+        CTRACE("pending: volume=%ld nelems=%ld nsent=%ld nrecvd=%ld",
+               volume, nelems, ctx->nsent, ctx->nrecvd);
+
+        if (volume > MRKRPC_PENDING_TRIE_VOLUME_THRESHOLD) {
+            trie_cleanup(&ctx->pending);
+        }
+
+        mrkthr_sleep(5000);
+    }
+    return 0;
+}
+
 
 /* node */
 
@@ -126,22 +159,21 @@ mrkrpc_make_node_from_addr(uint64_t nid,
     return res;
 }
 
-mrkrpc_node_t *
-mrkrpc_make_node(uint64_t nid, const char *hostname, int port)
+int
+mrkrpc_node_init_from_params(mrkrpc_node_t *node,
+                             uint64_t nid,
+                             const char *hostname,
+                             int port)
 {
-    mrkrpc_node_t *res;
     struct addrinfo hints, *ai = NULL, *ain;
     char portstr[32];
 
-    if ((res = malloc(sizeof(mrkrpc_node_t))) == NULL) {
-        FAIL("malloc");
-    }
-    res->nid = nid;
+    node->nid = nid;
     if (hostname != NULL) {
-        if ((res->hostname = strdup(hostname)) == NULL) {
+        if ((node->hostname = strdup(hostname)) == NULL) {
             FAIL("strdup");
         }
-        res->port = port;
+        node->port = port;
 
         snprintf(portstr, sizeof(portstr), "%d", port);
 
@@ -152,7 +184,7 @@ mrkrpc_make_node(uint64_t nid, const char *hostname, int port)
 
 
         if (getaddrinfo(hostname, portstr, &hints, &ai) != 0) {
-            TRRETNULL(MRKRPC_MAKE_NODE + 1);
+            TRRET(MRKRPC_MAKE_NODE + 1);
         }
 
         for (ain = ai; ain != NULL; ain = ain->ai_next) {
@@ -161,25 +193,41 @@ mrkrpc_make_node(uint64_t nid, const char *hostname, int port)
         }
 
         if (ain == NULL) {
-            TRRETNULL(MRKRPC_MAKE_NODE + 2);
+            TRRET(MRKRPC_MAKE_NODE + 2);
         }
 
-        if ((res->addr = malloc(ain->ai_addrlen)) == NULL) {
+        if ((node->addr = malloc(ain->ai_addrlen)) == NULL) {
             FAIL("malloc");
         }
-        memcpy(res->addr, ain->ai_addr, ain->ai_addrlen);
-        res->addrlen = ain->ai_addrlen;
+        memcpy(node->addr, ain->ai_addr, ain->ai_addrlen);
+        node->addrlen = ain->ai_addrlen;
         freeaddrinfo(ai);
     } else {
-        res->hostname = NULL;
-        res->port = port;
-        res->addrlen = NODE_DEFAULT_ADDRLEN;
-        if ((res->addr = malloc(res->addrlen)) == NULL) {
+        node->hostname = NULL;
+        node->port = port;
+        node->addrlen = NODE_DEFAULT_ADDRLEN;
+        if ((node->addr = malloc(node->addrlen)) == NULL) {
             FAIL("malloc");
         }
-        memset(res->addr, '\0', res->addrlen);
+        memset(node->addr, '\0', node->addrlen);
     }
 
+    return 0;
+}
+
+mrkrpc_node_t *
+mrkrpc_make_node(uint64_t nid, const char *hostname, int port)
+{
+    mrkrpc_node_t *res;
+
+    if ((res = malloc(sizeof(mrkrpc_node_t))) == NULL) {
+        FAIL("malloc");
+    }
+
+    if (mrkrpc_node_init_from_params(res, nid, hostname, port) != 0) {
+        free(res);
+        res = NULL;
+    }
     return res;
 }
 
@@ -227,6 +275,7 @@ queue_entry_init(mrkrpc_queue_entry_t *e,
     e->recvdat = NULL;
     e->res = 0;
     e->next = NULL;
+    mrkthr_signal_fini(&e->signal);
 }
 
 static void
@@ -369,7 +418,7 @@ queue_entry_dequeue(mrkrpc_queue_t *queue)
 {
     mrkrpc_queue_entry_t *qe;
 
-    while (1) {
+    while (!(mflags & MRKRPC_MFLAG_SHUTDOWN)) {
         if (queue->head == NULL) {
             if (mrkthr_signal_subscribe(&queue->signal) != 0) {
                 break;
@@ -387,6 +436,13 @@ queue_entry_dequeue(mrkrpc_queue_t *queue)
     TRRETNULL(QUEUE_ENTRY_DEQUEUE + 1);
 }
 
+static void
+queue_entry_dump(mrkrpc_queue_entry_t *qe)
+{
+    CTRACE("<qe op=%02hhx nid=%016lx sid=%016lx res=%d>", qe->op, qe->nid, qe->sid, qe->res);
+}
+
+
 static int
 sendthr_loop(int argc, void *argv[])
 {
@@ -396,27 +452,34 @@ sendthr_loop(int argc, void *argv[])
     ctx = argv[0];
 
 
-    while (1) {
+    while (!(mflags & MRKRPC_MFLAG_SHUTDOWN)) {
         mrkrpc_queue_entry_t *qe;
 
         if ((qe = queue_entry_dequeue(&ctx->sendq)) == NULL) {
             break;
         }
 
-        if (pack_queue_entry(qe) != 0) {
-            CTRACE("pack_queue_entry failure");
-            qe->res = SENDTHR_LOOP + 1;
-            mrkthr_signal_send(&qe->signal);
-            continue;
-        }
+        if (qe->res != 0) {
+            CTRACE("discarding this qe:");
+            queue_entry_dump(qe);
 
-        if (mrkthr_sendto_all(ctx->fd,
-                              qe->buf,
-                              qe->sz,
-                              0,
-                              qe->peer->addr,
-                              qe->peer->addrlen) != 0) {
-            perror("sendto");
+        } else {
+            if (pack_queue_entry(qe) != 0) {
+                CTRACE("pack_queue_entry failure");
+                qe->res = SENDTHR_LOOP + 1;
+                mrkthr_signal_send(&qe->signal);
+                continue;
+            }
+
+            if (mrkthr_sendto_all(ctx->fd,
+                                  qe->buf,
+                                  qe->sz,
+                                  0,
+                                  qe->peer->addr,
+                                  qe->peer->addrlen) != 0) {
+                perror("sendto");
+            }
+            ++(ctx->nsent);
         }
 
         if (!mrkthr_signal_has_owner(&qe->signal)) {
@@ -450,7 +513,7 @@ recvthr_loop(int argc, void *argv[])
         FAIL("malloc");
     }
 
-    while (1) {
+    while (!(mflags & MRKRPC_MFLAG_SHUTDOWN)) {
         unsigned char      *pbuf;
         ssize_t             nread;
         ssize_t             ndecoded;
@@ -472,6 +535,7 @@ recvthr_loop(int argc, void *argv[])
             CTRACE("EOF?");
             break;
         }
+        ++(ctx->nrecvd);
 
         pbuf = (unsigned char *)buf;
 
@@ -549,7 +613,7 @@ recvthr_loop(int argc, void *argv[])
              */
 
             qe = trn->value;
-
+            trie_remove_node(&ctx->pending, trn);
             /*
              * Check nid
              */
@@ -595,7 +659,7 @@ recvthr_loop(int argc, void *argv[])
 
                 /* optional post-procesing */
                 if (msge->resphandler != NULL) {
-                    msge->resphandler(ctx, qe);
+                    qe->res = msge->resphandler(ctx, qe);
                 }
             }
 
@@ -603,7 +667,8 @@ recvthr_loop(int argc, void *argv[])
              * for this assertion, see mrkrpc_call()
              */
             assert(mrkthr_signal_has_owner(&qe->signal));
-            mrkthr_dump(qe->signal.owner);
+            //CTRACE("qe->signal.owner=%p", qe->signal.owner);
+            //mrkthr_dump(qe->signal.owner);
             mrkthr_signal_send(&qe->signal);
 
         } else {
@@ -663,7 +728,7 @@ recvthr_loop(int argc, void *argv[])
                  * response has to be constructed and placed in qe->senddat.
                  */
                 if (msge->reqhandler != NULL) {
-                    msge->reqhandler(ctx, qe);
+                    qe->res = msge->reqhandler(ctx, qe);
                 }
                 queue_entry_enqueue(&ctx->sendq, qe);
             }
@@ -740,7 +805,9 @@ mrkrpc_run(mrkrpc_ctx_t *ctx)
     mrkthr_run(ctx->sendthr);
     assert(ctx->recvthr != NULL);
     mrkthr_run(ctx->recvthr);
-    mrkthr_sleep(0);
+    //assert(ctx->monitorthr != NULL);
+    //mrkthr_run(ctx->monitorthr);
+    //mrkthr_sleep(0);
     return 0;
 }
 
@@ -776,9 +843,26 @@ mrkrpc_ctx_init(mrkrpc_ctx_t *ctx)
 
     /* pending */
     trie_init(&ctx->pending);
+    //ctx->monitorthr = mrkthr_new("mrkrpc_monitor", monitor, 1, ctx);
+    ctx->nsent = 0;
+    ctx->nrecvd = 0;
 
     return 0;
 }
+
+void
+mrkrpc_ctx_close(mrkrpc_ctx_t *ctx)
+{
+    /* fd */
+    if (ctx->fd != -1) {
+        close(ctx->fd);
+        ctx->fd = -1;
+    }
+
+    mrkthr_signal_send(&ctx->sendq.signal);
+    mrkthr_signal_send(&ctx->recvq.signal);
+}
+
 
 int
 mrkrpc_ctx_fini(mrkrpc_ctx_t *ctx)
@@ -787,6 +871,9 @@ mrkrpc_ctx_fini(mrkrpc_ctx_t *ctx)
 
     /* XXX clean up queue entries */
     trie_fini(&ctx->pending);
+    //mrkthr_set_interrupt(ctx->monitorthr);
+    ctx->nsent = 0;
+    ctx->nrecvd = 0;
 
     /* sendq */
     mrkthr_set_interrupt(ctx->sendthr);
@@ -818,14 +905,12 @@ mrkrpc_ctx_fini(mrkrpc_ctx_t *ctx)
         FAIL("array_fini");
     }
 
-    /* fd */
-    if (ctx->fd != -1) {
-        close(ctx->fd);
-        ctx->fd = -1;
-    }
-
     /* node */
     mrkrpc_node_fini(&ctx->me);
+
+    /* fd */
+    mrkrpc_ctx_close(ctx);
+
     return 0;
 }
 
@@ -924,8 +1009,40 @@ mrkrpc_ctx_get_msg(mrkrpc_ctx_t *ctx, uint8_t op)
     return p;
 }
 
+size_t
+mrkrpc_ctx_get_pending_volume(mrkrpc_ctx_t *ctx)
+{
+    return trie_get_volume(&ctx->pending);
+}
+
+size_t
+mrkrpc_ctx_get_pending_length(mrkrpc_ctx_t *ctx)
+{
+    return trie_get_nelems(&ctx->pending);
+}
+
+
+size_t
+mrkrpc_ctx_compact_pending(mrkrpc_ctx_t *ctx, size_t threshold)
+{
+    size_t length;
+
+    length = trie_get_volume(&ctx->pending);
+    if (length > threshold) {
+        trie_cleanup(&ctx->pending);
+    }
+    return length;
+}
+
 
 /* module */
+
+void
+mrkrpc_shutdown(void)
+{
+    mflags |= MRKRPC_MFLAG_SHUTDOWN;
+}
+
 
 void
 mrkrpc_init(void)
@@ -941,6 +1058,8 @@ mrkrpc_init(void)
      * High 32 bits of sid will be random. Low 32 bits will be
      * incrementing.
      */
+    srandomdev();
+
     sidbase = (((uint64_t)random()) << 32);
 
     MEMDEBUG_REGISTER(mrkrpc);

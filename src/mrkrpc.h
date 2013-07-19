@@ -54,7 +54,7 @@ typedef struct _mrkrpc_queue {
 
 struct _mrkrpc_ctx;
 
-typedef void (*mrkrpc_recv_handler_t)(struct _mrkrpc_ctx *,
+typedef int (*mrkrpc_recv_handler_t)(struct _mrkrpc_ctx *,
                                       mrkrpc_queue_entry_t *);
 
 typedef struct _mrkrpc_msg_entry {
@@ -76,15 +76,20 @@ typedef struct _mrkrpc_ctx {
     mrkrpc_queue_t recvq;
 
     trie_t pending;
+    //mrkthr_ctx_t *monitorthr;
+    size_t nsent;
+    size_t nrecvd;
 
 } mrkrpc_ctx_t;
 
 /* module */
 void mrkrpc_init(void);
+void mrkrpc_shutdown(void);
 void mrkrpc_fini(void);
 
 /* ctx */
 int mrkrpc_ctx_init(mrkrpc_ctx_t *);
+void mrkrpc_ctx_close(mrkrpc_ctx_t *);
 int mrkrpc_ctx_fini(mrkrpc_ctx_t *);
 int mrkrpc_ctx_set_me(mrkrpc_ctx_t *, uint64_t, const char *, int);
 int mrkrpc_ctx_register_msg(mrkrpc_ctx_t *,
@@ -94,9 +99,13 @@ int mrkrpc_ctx_register_msg(mrkrpc_ctx_t *,
                            mrkdata_spec_t *,
                            mrkrpc_recv_handler_t);
 mrkrpc_msg_entry_t *mrkrpc_ctx_get_msg(mrkrpc_ctx_t *, uint8_t);
+size_t mrkrpc_ctx_get_pending_volume(mrkrpc_ctx_t *);
+size_t mrkrpc_ctx_get_pending_length(mrkrpc_ctx_t *);
+size_t mrkrpc_ctx_compact_pending(mrkrpc_ctx_t *, size_t);
 
 /* node */
 int mrkrpc_node_init(mrkrpc_node_t *);
+int mrkrpc_node_init_from_params(mrkrpc_node_t *, uint64_t, const char *, int);
 int mrkrpc_node_fini(mrkrpc_node_t *);
 int mrkrpc_node_dump(mrkrpc_node_t *);
 mrkrpc_node_t *mrkrpc_make_node(uint64_t, const char *, int);
