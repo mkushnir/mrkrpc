@@ -66,7 +66,7 @@ null_fini(void **p)
 /* monitor */
 
 UNUSED int
-monitor(int argc, void **argv)
+monitor(UNUSED int argc, UNUSED void **argv)
 {
     mrkrpc_ctx_t *ctx;
 
@@ -128,7 +128,9 @@ mrkrpc_node_dump(mrkrpc_node_t *node)
 
     a = ((struct sockaddr_in *)(node->addr));
 
+#ifndef __GNUC__
     assert(sizeof(buf) >= a->sin_len);
+#endif
 
     CTRACE("<node nid=%016lx @ %s:%d>",
            node->nid,
@@ -444,7 +446,7 @@ queue_entry_dump(mrkrpc_queue_entry_t *qe)
 
 
 static int
-sendthr_loop(int argc, void *argv[])
+sendthr_loop(UNUSED int argc, void *argv[])
 {
     mrkrpc_ctx_t *ctx;
 
@@ -500,7 +502,7 @@ sendthr_loop(int argc, void *argv[])
 }
 
 static int
-recvthr_loop(int argc, void *argv[])
+recvthr_loop(UNUSED int argc, void *argv[])
 {
     mrkrpc_ctx_t *ctx;
     /* buf is a reusable memory to store the raw datagram */
@@ -984,7 +986,9 @@ mrkrpc_ctx_register_msg(mrkrpc_ctx_t *ctx,
 {
     mrkrpc_msg_entry_t *msge;
 
+#ifndef __GNUC__
     assert(op < MRKRPC_MAX_MSGS);
+#endif
 
     if ((msge = array_get(&ctx->ops, op)) == NULL) {
         FAIL("array_get");
@@ -1001,7 +1005,9 @@ mrkrpc_ctx_get_msg(mrkrpc_ctx_t *ctx, uint8_t op)
 {
     mrkrpc_msg_entry_t *p;
 
+#ifndef __GNUC__
     assert(op < MRKRPC_MAX_MSGS);
+#endif
 
     if ((p = array_get(&ctx->ops, op)) == NULL) {
         return NULL;
