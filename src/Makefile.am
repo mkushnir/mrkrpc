@@ -18,7 +18,7 @@ libmrkrpc_la_SOURCES = mrkrpc.c
 nodist_libmrkrpc_la_SOURCES = diag.c
 
 if DEBUG
-DEBUG_FLAGS = -g -O0 $(CLANG_DEBUG)
+DEBUG_FLAGS = -g -O0 @CLANG_DEBUG@
 else
 DEBUG_FLAGS = -DNDEBUG -O3
 endif
