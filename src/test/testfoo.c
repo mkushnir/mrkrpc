@@ -121,7 +121,7 @@ test2(void)
     spec = mrkdata_make_spec(MRKDATA_UINT64);
     dat = mrkdata_datum_from_spec(spec, (void *)0x12345678, 0);
 
-    rcpt = mrkrpc_make_node(0x1235, "localhost", 0x1235);
+    rcpt = mrkrpc_make_node_from_params(&ctx, 0x1235, "localhost", 0x1235);
 
     for (i = 0; i < 3; ++i) {
         int res;

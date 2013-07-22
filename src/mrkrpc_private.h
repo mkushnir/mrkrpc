@@ -10,4 +10,7 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
+
+#include <mrkrpc.h>
+
 #endif /* MRKRPC_PRIVATE_H_DEFINED */

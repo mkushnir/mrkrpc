@@ -1,15 +1,16 @@
 #include <assert.h>
 #include <stdlib.h>
-#include <stdarg.h>
+#include <string.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+/* inet_ntop(3) */
 #include <arpa/inet.h>
 
 #include <mrkcommon/array.h>
-//#define TRRET_DEBUG_VERBOSE
+#define TRRET_DEBUG_VERBOSE
 #include <mrkcommon/dumpm.h>
 #include <mrkcommon/trie.h>
 #include <mrkcommon/util.h>
@@ -18,7 +19,8 @@ MEMDEBUG_DECLARE(mrkrpc);
 #include <mrkdata.h>
 #include <mrkthr.h>
 
-#include "mrkrpc.h"
+#include "mrkrpc_private.h"
+
 #include "diag.h"
 
 #define MRKRPC_MFLAG_INITIALIZED (0x01)
@@ -39,10 +41,10 @@ static mrkdata_spec_t *header_spec;
 #define MRKRPC_HEADER_SID 3
 static size_t calculated_default_message_sz;
 
-static uint64_t sidbase;
-UNUSED static uint64_t sid = 0;
+static mrkrpc_sid_t sidbase;
+UNUSED static mrkrpc_sid_t sid = 0;
 
-static uint64_t
+static mrkrpc_sid_t
 new_sid(void)
 {
     return (((uint64_t)random()) << 32) | random();
@@ -62,35 +64,6 @@ null_fini(void **p)
     *p = NULL;
     return 0;
 }
-
-/* monitor */
-
-UNUSED int
-monitor(UNUSED int argc, UNUSED void **argv)
-{
-    mrkrpc_ctx_t *ctx;
-
-    assert(argc == 1);
-    ctx = argv[0];
-
-    while (!(mflags & MRKRPC_MFLAG_SHUTDOWN)) {
-        size_t volume, nelems;
-
-        volume = trie_get_volume(&ctx->pending);
-        nelems = trie_get_nelems(&ctx->pending);
-
-        CTRACE("pending: volume=%ld nelems=%ld nsent=%ld nrecvd=%ld",
-               volume, nelems, ctx->nsent, ctx->nrecvd);
-
-        if (volume > MRKRPC_PENDING_TRIE_VOLUME_THRESHOLD) {
-            trie_cleanup(&ctx->pending);
-        }
-
-        mrkthr_sleep(5000);
-    }
-    return 0;
-}
-
 
 /* node */
 
@@ -141,7 +114,7 @@ mrkrpc_node_dump(mrkrpc_node_t *node)
 }
 
 mrkrpc_node_t *
-mrkrpc_make_node_from_addr(uint64_t nid,
+mrkrpc_make_node_from_addr(mrkrpc_nid_t nid,
                            const struct sockaddr *addr,
                            socklen_t addrlen)
 {
@@ -154,16 +127,34 @@ mrkrpc_make_node_from_addr(uint64_t nid,
     res->hostname = NULL;
     res->port = 0;
     res->addrlen = addrlen;
-    if ((res->addr = malloc(res->addrlen)) == NULL) {
+    if ((res->addr = malloc(addrlen)) == NULL) {
         FAIL("malloc");
     }
-    memcpy(res->addr, addr, res->addrlen);
+    memcpy(res->addr, addr, addrlen);
     return res;
 }
 
 int
-mrkrpc_node_init_from_params(mrkrpc_node_t *node,
-                             uint64_t nid,
+mrkrpc_node_init_from_addr(mrkrpc_node_t *node,
+                           mrkrpc_nid_t nid,
+                           const struct sockaddr *addr,
+                           socklen_t addrlen)
+{
+    node->nid = nid;
+    node->hostname = NULL;
+    node->port = 0;
+    node->addrlen = addrlen;
+    if ((node->addr = malloc(addrlen)) == NULL) {
+        FAIL("malloc");
+    }
+    memcpy(node->addr, addr, addrlen);
+    return 0;
+}
+
+int
+mrkrpc_node_init_from_params(mrkrpc_ctx_t *ctx,
+                             mrkrpc_node_t *node,
+                             mrkrpc_nid_t nid,
                              const char *hostname,
                              int port)
 {
@@ -180,13 +171,13 @@ mrkrpc_node_init_from_params(mrkrpc_node_t *node,
         snprintf(portstr, sizeof(portstr), "%d", port);
 
         memset(&hints, '\0', sizeof(struct addrinfo));
-        hints.ai_family = PF_INET;
-        hints.ai_socktype = SOCK_DGRAM;
-        hints.ai_protocol = IPPROTO_UDP;
+        hints.ai_family = ctx->family;
+        hints.ai_socktype = ctx->socktype;
+        hints.ai_protocol = ctx->protocol;
 
 
         if (getaddrinfo(hostname, portstr, &hints, &ai) != 0) {
-            TRRET(MRKRPC_MAKE_NODE + 1);
+            TRRET(MRKRPC_MAKE_NODE_FROM_PARAMS + 1);
         }
 
         for (ain = ai; ain != NULL; ain = ain->ai_next) {
@@ -195,7 +186,7 @@ mrkrpc_node_init_from_params(mrkrpc_node_t *node,
         }
 
         if (ain == NULL) {
-            TRRET(MRKRPC_MAKE_NODE + 2);
+            TRRET(MRKRPC_MAKE_NODE_FROM_PARAMS + 2);
         }
 
         if ((node->addr = malloc(ain->ai_addrlen)) == NULL) {
@@ -218,7 +209,10 @@ mrkrpc_node_init_from_params(mrkrpc_node_t *node,
 }
 
 mrkrpc_node_t *
-mrkrpc_make_node(uint64_t nid, const char *hostname, int port)
+mrkrpc_make_node_from_params(mrkrpc_ctx_t *ctx,
+                             mrkrpc_nid_t nid,
+                             const char *hostname,
+                             int port)
 {
     mrkrpc_node_t *res;
 
@@ -226,7 +220,7 @@ mrkrpc_make_node(uint64_t nid, const char *hostname, int port)
         FAIL("malloc");
     }
 
-    if (mrkrpc_node_init_from_params(res, nid, hostname, port) != 0) {
+    if (mrkrpc_node_init_from_params(ctx, res, nid, hostname, port) != 0) {
         free(res);
         res = NULL;
     }
@@ -237,14 +231,29 @@ void
 mrkrpc_node_copy(mrkrpc_node_t *dst, mrkrpc_node_t *src)
 {
     dst->nid = src->nid;
-    if ((dst->hostname = strdup(src->hostname)) == NULL) {
-        FAIL("strdup");
+    if (src->hostname != NULL) {
+        if ((dst->hostname = strdup(src->hostname)) == NULL) {
+            FAIL("strdup");
+        }
     }
-    if ((dst->addr = malloc(src->addrlen)) == NULL) {
-        FAIL("nallos");
+    dst->port = src->port;
+    if (src->addrlen > 0) {
+        if ((dst->addr = malloc(src->addrlen)) == NULL) {
+            FAIL("nallos");
+        }
+        memcpy(dst->addr, src->addr, src->addrlen);
+        dst->addrlen = src->addrlen;
     }
-    memcpy(dst->addr, src->addr, src->addrlen);
-    dst->addrlen = src->addrlen;
+}
+
+
+int
+mrkrpc_nodes_equal(mrkrpc_node_t *a, mrkrpc_node_t *b)
+{
+    /* XXX uint64_t implied */
+    return (a->nid == b->nid) &&
+           (a->addrlen == b->addrlen) &&
+           (memcmp(a->addr, b->addr, a->addrlen) == 0);
 }
 
 
@@ -264,8 +273,8 @@ static void
 queue_entry_init(mrkrpc_queue_entry_t *e,
                  mrkrpc_node_t *peer,
                  uint8_t op,
-                 uint64_t nid,
-                 uint64_t sid)
+                 mrkrpc_nid_t nid,
+                 mrkrpc_sid_t sid)
 {
     e->peer = peer;
     e->op = op;
@@ -312,7 +321,7 @@ static mrkrpc_queue_entry_t *
 make_queue_entry(mrkrpc_node_t *me,
                  mrkrpc_node_t *peer,
                  uint8_t op,
-                 uint64_t sid)
+                 mrkrpc_sid_t sid)
 {
     mrkrpc_queue_entry_t *qe;
 
@@ -326,7 +335,7 @@ make_queue_entry(mrkrpc_node_t *me,
 }
 
 static mrkdata_datum_t *
-make_header(uint8_t op, uint64_t nid, uint64_t sid)
+make_header(uint8_t op, mrkrpc_nid_t nid, mrkrpc_sid_t sid)
 {
     mrkdata_datum_t *header;
 
@@ -435,6 +444,7 @@ queue_entry_dequeue(mrkrpc_queue_t *queue)
             return qe;
         }
     }
+    TRACE("exiting ...");
     TRRETNULL(QUEUE_ENTRY_DEQUEUE + 1);
 }
 
@@ -498,6 +508,7 @@ sendthr_loop(UNUSED int argc, void *argv[])
         }
     }
 
+    TRACE("exiting ...");
     TRRET(0);
 }
 
@@ -744,6 +755,7 @@ CONTINUE:
     free(buf);
     buf = NULL;
 
+    TRACE("exiting ...");
     TRRET(0);
 }
 
@@ -791,7 +803,8 @@ mrkrpc_call(mrkrpc_ctx_t *ctx,
     /* response */
 
     /*
-     * qe->recvdat is a return value. We should return it back to the caller.
+     * qe->recvdat is a return value. We should return it back to the
+     * caller. The caller is responsible to dispose it.
      */
     *rv = qe->recvdat;
     res = qe->res;
@@ -807,9 +820,6 @@ mrkrpc_run(mrkrpc_ctx_t *ctx)
     mrkthr_run(ctx->sendthr);
     assert(ctx->recvthr != NULL);
     mrkthr_run(ctx->recvthr);
-    //assert(ctx->monitorthr != NULL);
-    //mrkthr_run(ctx->monitorthr);
-    //mrkthr_sleep(0);
     return 0;
 }
 
@@ -818,6 +828,10 @@ mrkrpc_run(mrkrpc_ctx_t *ctx)
 int
 mrkrpc_ctx_init(mrkrpc_ctx_t *ctx)
 {
+    ctx->family = PF_INET;
+    ctx->socktype = SOCK_DGRAM;
+    ctx->protocol = IPPROTO_UDP;
+
     /* node */
     mrkrpc_node_init(&ctx->me);
 
@@ -845,7 +859,6 @@ mrkrpc_ctx_init(mrkrpc_ctx_t *ctx)
 
     /* pending */
     trie_init(&ctx->pending);
-    //ctx->monitorthr = mrkthr_new("mrkrpc_monitor", monitor, 1, ctx);
     ctx->nsent = 0;
     ctx->nrecvd = 0;
 
@@ -873,7 +886,6 @@ mrkrpc_ctx_fini(mrkrpc_ctx_t *ctx)
 
     /* XXX clean up queue entries */
     trie_fini(&ctx->pending);
-    //mrkthr_set_interrupt(ctx->monitorthr);
     ctx->nsent = 0;
     ctx->nrecvd = 0;
 
@@ -918,7 +930,7 @@ mrkrpc_ctx_fini(mrkrpc_ctx_t *ctx)
 
 int
 mrkrpc_ctx_set_me(mrkrpc_ctx_t *ctx,
-                    uint64_t nid,
+                    mrkrpc_nid_t nid,
                     const char *hostname,
                     int port)
 {
@@ -934,9 +946,9 @@ mrkrpc_ctx_set_me(mrkrpc_ctx_t *ctx,
     snprintf(portstr, sizeof(portstr), "%d", port);
 
     memset(&hints, '\0', sizeof(struct addrinfo));
-    hints.ai_family = PF_INET;
-    hints.ai_socktype = SOCK_DGRAM;
-    hints.ai_protocol = IPPROTO_UDP;
+    hints.ai_family = ctx->family;
+    hints.ai_socktype = ctx->socktype;
+    hints.ai_protocol = ctx->protocol;
 
     if (ctx->fd != -1) {
         close(ctx->fd);
@@ -947,6 +959,10 @@ mrkrpc_ctx_set_me(mrkrpc_ctx_t *ctx,
     }
 
     for (ain = ai; ain != NULL; ain = ain->ai_next) {
+        ctx->family = ain->ai_family;
+        ctx->socktype = ain->ai_socktype;
+        ctx->protocol = ain->ai_protocol;
+
         if ((ctx->fd = socket(ain->ai_family,
                               ain->ai_socktype,
                               ain->ai_protocol)) < 0) {
@@ -1055,6 +1071,7 @@ mrkrpc_init(void)
 {
     mrkrpc_queue_entry_t *tmp;
     mrkrpc_node_t *n;
+    mrkrpc_ctx_t ctx;
 
     if (mflags & MRKRPC_MFLAG_INITIALIZED) {
         return;
@@ -1085,12 +1102,14 @@ mrkrpc_init(void)
     mrkdata_spec_add_field(header_spec, mrkdata_make_spec(MRKDATA_UINT64));
 
     /* discover default message size */
-    n = mrkrpc_make_node(0, NULL, 0);
+    mrkrpc_ctx_init(&ctx);
+    n = mrkrpc_make_node_from_params(&ctx, 0, NULL, 0);
     tmp = make_queue_entry(n, n, 0, 0);
     pack_queue_entry(tmp);
     calculated_default_message_sz = tmp->sz + QUEUE_ENTRY_DEFAULT_BUFSZ;
     queue_entry_destroy(&tmp);
     mrkrpc_node_destroy(&n);
+    mrkrpc_ctx_fini(&ctx);
 
     mflags |= MRKRPC_MFLAG_INITIALIZED;
 }

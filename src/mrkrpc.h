@@ -14,8 +14,11 @@
 extern "C" {
 #endif
 
+typedef uint64_t mrkrpc_nid_t;
+typedef uint64_t mrkrpc_sid_t;
+
 typedef struct _mrkrpc_node {
-    uint64_t nid;
+    mrkrpc_nid_t nid;
     char *hostname;
     int port;
     struct sockaddr *addr;
@@ -27,8 +30,8 @@ typedef struct _mrkrpc_queue_entry {
     mrkrpc_node_t *peer;
 
     uint8_t op;
-    uint64_t nid;
-    uint64_t sid;
+    mrkrpc_nid_t nid;
+    mrkrpc_sid_t sid;
 
     /* weak ref */
     mrkdata_datum_t *senddat;
@@ -65,6 +68,10 @@ typedef struct _mrkrpc_msg_entry {
 } mrkrpc_msg_entry_t;
 
 typedef struct _mrkrpc_ctx {
+    int family;
+    int socktype;
+    int protocol;
+
     mrkrpc_node_t me;
     int fd;
     array_t ops;
@@ -76,7 +83,6 @@ typedef struct _mrkrpc_ctx {
     mrkrpc_queue_t recvq;
 
     trie_t pending;
-    //mrkthr_ctx_t *monitorthr;
     size_t nsent;
     size_t nrecvd;
 
@@ -91,7 +97,7 @@ void mrkrpc_fini(void);
 int mrkrpc_ctx_init(mrkrpc_ctx_t *);
 void mrkrpc_ctx_close(mrkrpc_ctx_t *);
 int mrkrpc_ctx_fini(mrkrpc_ctx_t *);
-int mrkrpc_ctx_set_me(mrkrpc_ctx_t *, uint64_t, const char *, int);
+int mrkrpc_ctx_set_me(mrkrpc_ctx_t *, mrkrpc_nid_t, const char *, int);
 int mrkrpc_ctx_register_msg(mrkrpc_ctx_t *,
                            uint8_t,
                            mrkdata_spec_t *,
@@ -105,13 +111,27 @@ size_t mrkrpc_ctx_compact_pending(mrkrpc_ctx_t *, size_t);
 
 /* node */
 int mrkrpc_node_init(mrkrpc_node_t *);
-int mrkrpc_node_init_from_params(mrkrpc_node_t *, uint64_t, const char *, int);
+int mrkrpc_node_init_from_params(mrkrpc_ctx_t *,
+                                 mrkrpc_node_t *,
+                                 mrkrpc_nid_t,
+                                 const char *,
+                                 int);
+int mrkrpc_node_init_from_addr(mrkrpc_node_t *,
+                               mrkrpc_nid_t,
+                               const struct sockaddr *,
+                               socklen_t);
 int mrkrpc_node_fini(mrkrpc_node_t *);
 int mrkrpc_node_dump(mrkrpc_node_t *);
-mrkrpc_node_t *mrkrpc_make_node(uint64_t, const char *, int);
-mrkrpc_node_t *mrkrpc_make_node_from_addr(uint64_t, const struct sockaddr *, socklen_t);
+mrkrpc_node_t *mrkrpc_make_node_from_params(mrkrpc_ctx_t *,
+                                            mrkrpc_nid_t,
+                                            const char *,
+                                            int);
+mrkrpc_node_t *mrkrpc_make_node_from_addr(mrkrpc_nid_t,
+                                          const struct sockaddr *,
+                                          socklen_t);
 void mrkrpc_node_destroy(mrkrpc_node_t **);
 void mrkrpc_node_copy(mrkrpc_node_t *, mrkrpc_node_t *);
+int mrkrpc_nodes_equal(mrkrpc_node_t *, mrkrpc_node_t *);
 
 
 /* operations */
