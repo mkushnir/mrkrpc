@@ -10,7 +10,7 @@
 #include <arpa/inet.h>
 
 #include <mrkcommon/array.h>
-#define TRRET_DEBUG_VERBOSE
+//#define TRRET_DEBUG_VERBOSE
 #include <mrkcommon/dumpm.h>
 #include <mrkcommon/trie.h>
 #include <mrkcommon/util.h>
@@ -272,12 +272,14 @@ mrkrpc_node_destroy(mrkrpc_node_t **node)
 static void
 queue_entry_init(mrkrpc_queue_entry_t *e,
                  mrkrpc_node_t *peer,
-                 uint8_t op,
+                 uint8_t sendop,
+                 uint8_t recvop,
                  mrkrpc_nid_t nid,
                  mrkrpc_sid_t sid)
 {
     e->peer = peer;
-    e->op = op;
+    e->sendop = sendop;
+    e->recvop = recvop;
     e->nid = nid;
     e->sid = sid;
     e->senddat = NULL;
@@ -285,7 +287,7 @@ queue_entry_init(mrkrpc_queue_entry_t *e,
     e->sz = 0;
     e->recvdat = NULL;
     e->res = 0;
-    e->next = NULL;
+    DTQUEUE_ENTRY_INIT(link, e);
     mrkthr_signal_fini(&e->signal);
 }
 
@@ -293,7 +295,8 @@ static void
 queue_entry_fini(mrkrpc_queue_entry_t *e)
 {
     e->peer = NULL;
-    e->op = 0;
+    e->sendop = 0;
+    e->recvop = 0;
     e->nid = 0;
     e->sid = 0;
     e->senddat = NULL;
@@ -304,7 +307,7 @@ queue_entry_fini(mrkrpc_queue_entry_t *e)
     e->sz = 0;
     e->recvdat = NULL;
     e->res = 0;
-    e->next = NULL;
+    DTQUEUE_ENTRY_INIT(link, e);
 }
 
 static void
@@ -320,7 +323,8 @@ queue_entry_destroy(mrkrpc_queue_entry_t **e)
 static mrkrpc_queue_entry_t *
 make_queue_entry(mrkrpc_node_t *me,
                  mrkrpc_node_t *peer,
-                 uint8_t op,
+                 uint8_t sendop,
+                 uint8_t recvop,
                  mrkrpc_sid_t sid)
 {
     mrkrpc_queue_entry_t *qe;
@@ -329,7 +333,7 @@ make_queue_entry(mrkrpc_node_t *me,
         FAIL("malloc");
     }
 
-    queue_entry_init(qe, peer, op, me->nid, sid);
+    queue_entry_init(qe, peer, sendop, recvop, me->nid, sid);
 
     return qe;
 }
@@ -357,7 +361,7 @@ pack_queue_entry(mrkrpc_queue_entry_t *qe)
     size_t nwritten;
     mrkdata_datum_t *header;
 
-    if ((header = make_header(qe->op, qe->nid, qe->sid)) == NULL) {
+    if ((header = make_header(qe->sendop, qe->nid, qe->sid)) == NULL) {
         TRRET(PACK_QUEUE_ENTRY + 1);
     }
 
@@ -410,37 +414,30 @@ pack_queue_entry(mrkrpc_queue_entry_t *qe)
 }
 
 static void
-queue_entry_enqueue(mrkrpc_queue_t *queue, mrkrpc_queue_entry_t *qe)
+queue_entry_enqueue(mrkrpc_queue_t *queue,
+                    mrkthr_signal_t *signal,
+                    mrkrpc_queue_entry_t *qe)
 {
     /* tail push */
-    qe->next = NULL;
-    if (queue->head == NULL) {
-        queue->head = qe;
-        queue->tail = qe;
-    } else {
-        queue->tail->next = qe;
-        queue->tail = qe;
-    }
-    mrkthr_signal_send(&queue->signal);
+    DTQUEUE_ENQUEUE(queue, link, qe);
+    mrkthr_signal_send(signal);
 }
 
 static mrkrpc_queue_entry_t *
-queue_entry_dequeue(mrkrpc_queue_t *queue)
+queue_entry_dequeue(mrkrpc_queue_t *queue,
+                    mrkthr_signal_t *signal)
 {
     mrkrpc_queue_entry_t *qe;
 
     while (!(mflags & MRKRPC_MFLAG_SHUTDOWN)) {
-        if (queue->head == NULL) {
-            if (mrkthr_signal_subscribe(&queue->signal) != 0) {
+        if (DTQUEUE_HEAD(queue) == NULL) {
+            if (mrkthr_signal_subscribe(signal) != 0) {
                 break;
             }
             /* loop again, there must be something in the queue */
         } else {
-            qe = queue->head;
-            queue->head = qe->next;
-            if (queue->head == NULL) {
-                queue->tail = NULL;
-            }
+            qe = DTQUEUE_HEAD(queue);
+            DTQUEUE_DEQUEUE(queue, link);
             return qe;
         }
     }
@@ -449,9 +446,23 @@ queue_entry_dequeue(mrkrpc_queue_t *queue)
 }
 
 static void
+queue_entry_withdraw(mrkrpc_queue_t *queue,
+                     mrkthr_signal_t *signal,
+                     mrkrpc_queue_entry_t *qe)
+{
+    DTQUEUE_REMOVE(queue, link, qe);
+    mrkthr_signal_fini(signal);
+}
+
+static void
 queue_entry_dump(mrkrpc_queue_entry_t *qe)
 {
-    CTRACE("<qe op=%02hhx nid=%016lx sid=%016lx res=%d>", qe->op, qe->nid, qe->sid, qe->res);
+    CTRACE("<qe sendop=%hhu recvop=%hhu nid=%016lx sid=%016lx res=%d>",
+           qe->sendop,
+           qe->recvop,
+           qe->nid,
+           qe->sid,
+           qe->res);
 }
 
 
@@ -467,9 +478,13 @@ sendthr_loop(UNUSED int argc, void *argv[])
     while (!(mflags & MRKRPC_MFLAG_SHUTDOWN)) {
         mrkrpc_queue_entry_t *qe;
 
-        if ((qe = queue_entry_dequeue(&ctx->sendq)) == NULL) {
+        if ((qe = queue_entry_dequeue(&ctx->sendq,
+                                      &ctx->sendq_signal)) == NULL) {
             break;
         }
+
+        //CTRACE("Retrieved entry:");
+        //queue_entry_dump(qe);
 
         if (qe->res != 0) {
             CTRACE("discarding this qe:");
@@ -511,6 +526,26 @@ sendthr_loop(UNUSED int argc, void *argv[])
     TRACE("exiting ...");
     TRRET(0);
 }
+
+static int
+_reqhandler(UNUSED int argc, void **argv)
+{
+    mrkrpc_recv_handler_t h;
+    mrkrpc_ctx_t *ctx;
+    mrkrpc_queue_entry_t *qe;
+
+    assert(argc == 3);
+    h = argv[0];
+    ctx = argv[1];
+    qe = argv[2];
+
+    qe->res = h(ctx, qe);
+    queue_entry_enqueue(&ctx->sendq,
+                        &ctx->sendq_signal,
+                        qe);
+    return 0;
+}
+
 
 static int
 recvthr_loop(UNUSED int argc, void *argv[])
@@ -644,12 +679,13 @@ recvthr_loop(UNUSED int argc, void *argv[])
 
             /* complete request operation */
             if ((msge = mrkrpc_ctx_get_msg(ctx, op->value.u8)) == NULL) {
-                /* XXX any indication to the sender? */
+                /* XXX any indication to the caller? */
                 CTRACE("op is not supported: %02x, original op was: %02x",
                        op->value.u8,
-                       qe->op);
+                       qe->sendop);
 
             } else {
+                qe->recvop = op->value.u8;
                 if (msge->respspec != NULL) {
                     if ((ndecoded = mrkdata_unpack_buf(msge->respspec,
                                                        pbuf,
@@ -698,6 +734,7 @@ recvthr_loop(UNUSED int argc, void *argv[])
                 CTRACE("op is not supported: %02x", op->value.u8);
 
             } else {
+
                 if ((from = mrkrpc_make_node_from_addr(nid->value.u64,
                         (const struct sockaddr *)addr, addrlen)) == NULL) {
 
@@ -708,6 +745,7 @@ recvthr_loop(UNUSED int argc, void *argv[])
 
                 qe = make_queue_entry(&ctx->me,
                                       from,
+                                      0,
                                       op->value.u8,
                                       sid->value.u64);
                 /*
@@ -741,9 +779,22 @@ recvthr_loop(UNUSED int argc, void *argv[])
                  * response has to be constructed and placed in qe->senddat.
                  */
                 if (msge->reqhandler != NULL) {
-                    qe->res = msge->reqhandler(ctx, qe);
+                    mrkthr_ctx_t *thr;
+
+                    if ((thr = mrkthr_new(NULL,
+                                          _reqhandler,
+                                          3,
+                                          msge->reqhandler,
+                                          ctx,
+                                          qe)) == NULL) {
+                        FAIL("mrkthr_new");
+                    }
+                    mrkthr_run(thr);
+                } else {
+                    queue_entry_enqueue(&ctx->sendq,
+                                        &ctx->sendq_signal,
+                                        qe);
                 }
-                queue_entry_enqueue(&ctx->sendq, qe);
             }
         }
 CONTINUE:
@@ -765,6 +816,31 @@ mrkrpc_serve(mrkrpc_ctx_t *ctx)
     return mrkthr_join(ctx->recvthr);
 }
 
+
+static int
+_signal_subscribe_for_recvthr(UNUSED int argc, void **argv)
+{
+    mrkthr_signal_t *signal;
+
+    assert(argc == 1);
+    signal = argv[0];
+    /*
+     * Set owner to tell sendthr_loop() that we are going to take care of this
+     * qe.
+     */
+    mrkthr_signal_init(signal, mrkthr_me());
+    mrkthr_signal_subscribe(signal);
+    return 0;
+}
+
+
+static int
+signal_subscribe_for_recvthr_with_timeout(uint64_t timeout, mrkthr_signal_t *signal)
+{
+    return mrkthr_wait_for(timeout, NULL, _signal_subscribe_for_recvthr, 1, signal);
+}
+
+
 int
 mrkrpc_call(mrkrpc_ctx_t *ctx,
             mrkrpc_node_t *to,
@@ -776,13 +852,8 @@ mrkrpc_call(mrkrpc_ctx_t *ctx,
     mrkrpc_queue_entry_t *qe = NULL;
     trie_node_t *trn;
 
-    qe = make_queue_entry(&ctx->me, to, op, new_sid());
+    qe = make_queue_entry(&ctx->me, to, op, 0, new_sid());
     qe->senddat = arg;
-    /*
-     * Set owner to tell sendthr_loop() that we are going to ake care this
-     * qe.
-     */
-    mrkthr_signal_init(&qe->signal, mrkthr_me());
 
     /*
      * Remember this qe, recvthr_loop() will retrieve it at response time.
@@ -792,13 +863,38 @@ mrkrpc_call(mrkrpc_ctx_t *ctx,
     }
     trn->value = qe;
 
-    queue_entry_enqueue(&ctx->sendq, qe);
+    queue_entry_enqueue(&ctx->sendq, &ctx->sendq_signal, qe);
+    //TRACE(">>> C: op=%hhu nid=%016lx->%016lx sid=%016lx", qe->sendop, qe->nid, qe->peer->nid, qe->sid);
 
     /*
      * fall asleep until we receive response
      */
-    mrkthr_signal_subscribe(&qe->signal);
-    mrkthr_signal_fini(&qe->signal);
+    if (ctx->call_timeout > 0) {
+        if ((res = signal_subscribe_for_recvthr_with_timeout(ctx->call_timeout,
+                                                             &qe->signal)) ==
+                MRKTHR_WAIT_TIMEOUT) {
+
+            trie_node_t *trn;
+
+            queue_entry_withdraw(&ctx->sendq, &ctx->sendq_signal, qe);
+
+            if ((trn = trie_find_exact(&ctx->pending, qe->sid)) != NULL) {
+                trn->value = NULL;
+                trie_remove_node(&ctx->pending, trn);
+            }
+        }
+
+    } else {
+        /*
+         * Set owner to tell sendthr_loop() that we are going to take care of this
+         * qe.
+         */
+        mrkthr_signal_init(&qe->signal, mrkthr_me());
+        mrkthr_signal_subscribe(&qe->signal);
+        mrkthr_signal_fini(&qe->signal);
+    }
+
+    //TRACE("<<< C: op=%hhu nid=%016lx<-%016lx sid=%016lx", qe->recvop, qe->nid, qe->peer->nid, qe->sid);
 
     /* response */
 
@@ -807,7 +903,13 @@ mrkrpc_call(mrkrpc_ctx_t *ctx,
      * caller. The caller is responsible to dispose it.
      */
     *rv = qe->recvdat;
-    res = qe->res;
+    if (res == 0) {
+        /*
+         * There was not a timeout (if configured), otherwise we return
+         * simething like MRKTHR_WAIT_TIMEOUT.
+         */
+        res = qe->res;
+    }
     queue_entry_destroy(&qe);
 
     TRRET(res);
@@ -847,15 +949,14 @@ mrkrpc_ctx_init(mrkrpc_ctx_t *ctx)
 
     /* sendq */
     ctx->sendthr = mrkthr_new("sendthr", sendthr_loop, 1, ctx);
-    mrkthr_signal_init(&ctx->sendq.signal, ctx->sendthr);
-    ctx->sendq.head = NULL;
-    ctx->sendq.tail = NULL;
+    mrkthr_signal_init(&ctx->sendq_signal, ctx->sendthr);
+    DTQUEUE_INIT(&ctx->sendq);
 
     /* recvq */
     ctx->recvthr = mrkthr_new("recvthr", recvthr_loop, 1, ctx);
-    mrkthr_signal_init(&ctx->recvq.signal, ctx->recvthr);
-    ctx->recvq.head = NULL;
-    ctx->recvq.tail = NULL;
+    mrkthr_signal_init(&ctx->recvq_signal, ctx->recvthr);
+    DTQUEUE_INIT(&ctx->recvq);
+    ctx->call_timeout = 0;
 
     /* pending */
     trie_init(&ctx->pending);
@@ -866,6 +967,13 @@ mrkrpc_ctx_init(mrkrpc_ctx_t *ctx)
 }
 
 void
+mrkrpc_ctx_set_call_timeout(mrkrpc_ctx_t *ctx, uint64_t timeout)
+{
+    ctx->call_timeout = timeout;
+}
+
+
+void
 mrkrpc_ctx_close(mrkrpc_ctx_t *ctx)
 {
     /* fd */
@@ -874,15 +982,15 @@ mrkrpc_ctx_close(mrkrpc_ctx_t *ctx)
         ctx->fd = -1;
     }
 
-    mrkthr_signal_send(&ctx->sendq.signal);
-    mrkthr_signal_send(&ctx->recvq.signal);
+    mrkthr_signal_send(&ctx->sendq_signal);
+    mrkthr_signal_send(&ctx->recvq_signal);
 }
 
 
 int
 mrkrpc_ctx_fini(mrkrpc_ctx_t *ctx)
 {
-    mrkrpc_queue_entry_t *e, *next;
+    mrkrpc_queue_entry_t *e;
 
     /* XXX clean up queue entries */
     trie_fini(&ctx->pending);
@@ -892,27 +1000,24 @@ mrkrpc_ctx_fini(mrkrpc_ctx_t *ctx)
     /* sendq */
     mrkthr_set_interrupt(ctx->sendthr);
     mrkthr_join(ctx->sendthr);
-    mrkthr_signal_fini(&ctx->sendq.signal);
-    for (e = ctx->sendq.head; e != NULL;) {
-        next = e->next;
+    mrkthr_signal_fini(&ctx->sendq_signal);
+
+    while ((e = DTQUEUE_HEAD(&ctx->sendq)) != NULL) {
+        DTQUEUE_DEQUEUE(&ctx->sendq, link);
         queue_entry_destroy(&e);
-        e = next;
     }
-    ctx->sendq.head = NULL;
-    ctx->sendq.tail = NULL;
+    DTQUEUE_FINI(&ctx->sendq);
 
     /* recvq */
     mrkthr_set_interrupt(ctx->recvthr);
+    /* won't join it because it might be blocked by recvfrom() */
     //mrkthr_join(ctx->recvthr);
-    mrkthr_signal_fini(&ctx->recvq.signal);
-    for (e = ctx->recvq.head; e != NULL;) {
-        next = e->next;
-        mrkrpc_node_destroy(&e->peer);
+    mrkthr_signal_fini(&ctx->recvq_signal);
+    while ((e = DTQUEUE_HEAD(&ctx->recvq)) != NULL) {
+        DTQUEUE_DEQUEUE(&ctx->recvq, link);
         queue_entry_destroy(&e);
-        e = next;
     }
-    ctx->recvq.head = NULL;
-    ctx->recvq.tail = NULL;
+    DTQUEUE_FINI(&ctx->recvq);
 
     /* ops */
     if (array_fini(&ctx->ops) != 0) {
@@ -1104,7 +1209,7 @@ mrkrpc_init(void)
     /* discover default message size */
     mrkrpc_ctx_init(&ctx);
     n = mrkrpc_make_node_from_params(&ctx, 0, NULL, 0);
-    tmp = make_queue_entry(n, n, 0, 0);
+    tmp = make_queue_entry(n, n, 0, 0, 0);
     pack_queue_entry(tmp);
     calculated_default_message_sz = tmp->sz + QUEUE_ENTRY_DEFAULT_BUFSZ;
     queue_entry_destroy(&tmp);

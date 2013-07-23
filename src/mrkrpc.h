@@ -7,6 +7,7 @@
 
 #include <mrkcommon/array.h>
 #include <mrkcommon/trie.h>
+#include <mrkcommon/dtqueue.h>
 #include <mrkthr.h>
 #include <mrkdata.h>
 
@@ -29,36 +30,31 @@ typedef struct _mrkrpc_queue_entry {
     /* weak ref */
     mrkrpc_node_t *peer;
 
-    uint8_t op;
     mrkrpc_nid_t nid;
     mrkrpc_sid_t sid;
 
     /* weak ref */
+    uint8_t sendop;
     mrkdata_datum_t *senddat;
 
     unsigned char *buf;
     size_t sz;
 
     /* weak ref */
+    uint8_t recvop;
     mrkdata_datum_t *recvdat;
 
     mrkthr_signal_t signal;
     /* mrkrpc_call() return value */
     int res;
 
-    struct _mrkrpc_queue_entry *next;
+    DTQUEUE_ENTRY(_mrkrpc_queue_entry, link);
 } mrkrpc_queue_entry_t;
-
-typedef struct _mrkrpc_queue {
-    mrkrpc_queue_entry_t *head;
-    mrkrpc_queue_entry_t *tail;
-    mrkthr_signal_t signal;
-} mrkrpc_queue_t;
 
 struct _mrkrpc_ctx;
 
 typedef int (*mrkrpc_recv_handler_t)(struct _mrkrpc_ctx *,
-                                      mrkrpc_queue_entry_t *);
+                                     mrkrpc_queue_entry_t *);
 
 typedef struct _mrkrpc_msg_entry {
     mrkdata_spec_t *reqspec;
@@ -66,6 +62,8 @@ typedef struct _mrkrpc_msg_entry {
     mrkdata_spec_t *respspec;
     mrkrpc_recv_handler_t resphandler;
 } mrkrpc_msg_entry_t;
+
+typedef DTQUEUE(_mrkrpc_queue_entry, mrkrpc_queue_t);
 
 typedef struct _mrkrpc_ctx {
     int family;
@@ -78,13 +76,17 @@ typedef struct _mrkrpc_ctx {
 
     mrkthr_ctx_t *sendthr;
     mrkrpc_queue_t sendq;
+    mrkthr_signal_t sendq_signal;
 
     mrkthr_ctx_t *recvthr;
     mrkrpc_queue_t recvq;
+    mrkthr_signal_t recvq_signal;
 
     trie_t pending;
     size_t nsent;
     size_t nrecvd;
+
+    uint64_t call_timeout;
 
 } mrkrpc_ctx_t;
 
@@ -98,12 +100,13 @@ int mrkrpc_ctx_init(mrkrpc_ctx_t *);
 void mrkrpc_ctx_close(mrkrpc_ctx_t *);
 int mrkrpc_ctx_fini(mrkrpc_ctx_t *);
 int mrkrpc_ctx_set_me(mrkrpc_ctx_t *, mrkrpc_nid_t, const char *, int);
+void mrkrpc_ctx_set_call_timeout(mrkrpc_ctx_t *, uint64_t);
 int mrkrpc_ctx_register_msg(mrkrpc_ctx_t *,
-                           uint8_t,
-                           mrkdata_spec_t *,
-                           mrkrpc_recv_handler_t,
-                           mrkdata_spec_t *,
-                           mrkrpc_recv_handler_t);
+                            uint8_t,
+                            mrkdata_spec_t *,
+                            mrkrpc_recv_handler_t,
+                            mrkdata_spec_t *,
+                            mrkrpc_recv_handler_t);
 mrkrpc_msg_entry_t *mrkrpc_ctx_get_msg(mrkrpc_ctx_t *, uint8_t);
 size_t mrkrpc_ctx_get_pending_volume(mrkrpc_ctx_t *);
 size_t mrkrpc_ctx_get_pending_length(mrkrpc_ctx_t *);

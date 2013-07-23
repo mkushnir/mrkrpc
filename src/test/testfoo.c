@@ -37,14 +37,16 @@ test0(void)
 }
 
 static int
-my_handler(UNUSED mrkrpc_ctx_t *ctx,
+listener_handler(UNUSED mrkrpc_ctx_t *ctx,
            UNUSED mrkrpc_queue_entry_t *qe)
 {
     //D8(qe->peer->addr, qe->peer->addrlen);
     //TRACE("op=%02u nid=%016lx sid=%016lx", qe->op, qe->nid, qe->sid);
     //mrkdata_datum_dump(qe->recvdat);
+    qe->sendop = 123;
     qe->senddat = qe->recvdat;
     qe->recvdat = NULL;
+    CTRACE(">>> L: op=%02u to nid=%016lx sid=%016lx", qe->sendop, qe->peer->nid, qe->sid);
     return 0;
 }
 
@@ -59,7 +61,7 @@ listener(UNUSED int argc, UNUSED void *argv[])
 
     mrkrpc_ctx_register_msg(&ctx, 123,
                            mrkdata_make_spec(MRKDATA_UINT64),
-                           my_handler,
+                           listener_handler,
                            mrkdata_make_spec(MRKDATA_UINT64),
                            NULL);
 
@@ -105,7 +107,7 @@ test2(void)
 
     mrkrpc_ctx_register_msg(&ctx, 123,
                            mrkdata_make_spec(MRKDATA_UINT64),
-                           my_handler,
+                           NULL,
                            mrkdata_make_spec(MRKDATA_UINT64),
                            NULL);
 
@@ -123,7 +125,7 @@ test2(void)
 
     rcpt = mrkrpc_make_node_from_params(&ctx, 0x1235, "localhost", 0x1235);
 
-    for (i = 0; i < 3; ++i) {
+    for (i = 0; i < 5; ++i) {
         int res;
 
         dat->value.u64++;

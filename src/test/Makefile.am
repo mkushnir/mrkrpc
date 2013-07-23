@@ -2,7 +2,7 @@ AUTOMAKE_OPTIONS = foreign
 CLEANFILES = *.core
 #CLEANFILES += *.in
 
-noinst_PROGRAMS=testfoo
+noinst_PROGRAMS=testfoo testtimeout
 
 distdir = ../../$(PACKAGE)-$(VERSION)/src/test
 dist_HEADERS = unittest.h
@@ -21,6 +21,11 @@ nodist_testfoo_SOURCES = ../diag.c
 testfoo_SOURCES = testfoo.c
 testfoo_CFLAGS = $(DEBUG_FLAGS) -Wall -Wextra -Werror -std=c99 -I.. -I$(includedir)
 testfoo_LDFLAGS = -L$(libdir) -lmrkcommon -lmrkdata -lmrkthr -lmrkrpc
+
+nodist_testtimeout_SOURCES = ../diag.c
+testtimeout_SOURCES = testtimeout.c
+testtimeout_CFLAGS = $(DEBUG_FLAGS) -Wall -Wextra -Werror -std=c99 -I.. -I$(includedir)
+testtimeout_LDFLAGS = -L$(libdir) -lmrkcommon -lmrkdata -lmrkthr -lmrkrpc
 
 ../diag.c ../diag.h: ../diag.txt
 	sh ../gen-diag
