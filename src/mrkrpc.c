@@ -446,15 +446,6 @@ queue_entry_dequeue(mrkrpc_queue_t *queue,
 }
 
 static void
-queue_entry_withdraw(mrkrpc_queue_t *queue,
-                     mrkthr_signal_t *signal,
-                     mrkrpc_queue_entry_t *qe)
-{
-    DTQUEUE_REMOVE(queue, link, qe);
-    mrkthr_signal_fini(signal);
-}
-
-static void
 queue_entry_dump(mrkrpc_queue_entry_t *qe)
 {
     CTRACE("<qe sendop=%hhu recvop=%hhu nid=%016lx sid=%016lx res=%d>",
@@ -463,6 +454,20 @@ queue_entry_dump(mrkrpc_queue_entry_t *qe)
            qe->nid,
            qe->sid,
            qe->res);
+}
+
+UNUSED static void
+queue_dump(mrkrpc_queue_t *queue)
+{
+    mrkrpc_queue_entry_t *qe;
+
+    CTRACE("queue:");
+    for (qe = DTQUEUE_HEAD(queue);
+         qe != NULL;
+         qe = DTQUEUE_NEXT(link, qe)) {
+        queue_entry_dump(qe);
+    }
+    CTRACE("end of queue");
 }
 
 
@@ -478,12 +483,13 @@ sendthr_loop(UNUSED int argc, void *argv[])
     while (!(mflags & MRKRPC_MFLAG_SHUTDOWN)) {
         mrkrpc_queue_entry_t *qe;
 
+        //CTRACE("dequeueing ...");
         if ((qe = queue_entry_dequeue(&ctx->sendq,
                                       &ctx->sendq_signal)) == NULL) {
             break;
         }
 
-        //CTRACE("Retrieved entry:");
+        //CTRACE("dequeued entry for sending:");
         //queue_entry_dump(qe);
 
         if (qe->res != 0) {
@@ -508,6 +514,7 @@ sendthr_loop(UNUSED int argc, void *argv[])
             }
             ++(ctx->nsent);
         }
+        //CTRACE("sent %016lx", qe->sid);
 
         if (!mrkthr_signal_has_owner(&qe->signal)) {
             /*
@@ -556,6 +563,8 @@ recvthr_loop(UNUSED int argc, void *argv[])
 
     assert(argc == 1);
     ctx = argv[0];
+
+    //CTRACE("started recvthr_loop");
 
     if ((buf = malloc(calculated_default_message_sz)) == NULL) {
         FAIL("malloc");
@@ -861,6 +870,7 @@ mrkrpc_call(mrkrpc_ctx_t *ctx,
 
     queue_entry_enqueue(&ctx->sendq, &ctx->sendq_signal, qe);
     //TRACE(">>> C: op=%hhu nid=%016lx->%016lx sid=%016lx", qe->sendop, qe->nid, qe->peer->nid, qe->sid);
+    //queue_dump(&ctx->sendq);
 
     /*
      * fall asleep until we receive response
@@ -872,7 +882,7 @@ mrkrpc_call(mrkrpc_ctx_t *ctx,
 
             trie_node_t *trn;
 
-            queue_entry_withdraw(&ctx->sendq, &ctx->sendq_signal, qe);
+            DTQUEUE_REMOVE(&ctx->sendq, link, qe);
 
             if ((trn = trie_find_exact(&ctx->pending, qe->sid)) != NULL) {
                 trn->value = NULL;
