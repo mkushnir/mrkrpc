@@ -779,17 +779,13 @@ recvthr_loop(UNUSED int argc, void *argv[])
                  * response has to be constructed and placed in qe->senddat.
                  */
                 if (msge->reqhandler != NULL) {
-                    mrkthr_ctx_t *thr;
 
-                    if ((thr = mrkthr_new(NULL,
-                                          _reqhandler,
-                                          3,
-                                          msge->reqhandler,
-                                          ctx,
-                                          qe)) == NULL) {
-                        FAIL("mrkthr_new");
-                    }
-                    mrkthr_run(thr);
+                    mrkthr_spawn(NULL,
+                                 _reqhandler,
+                                 3,
+                                 msge->reqhandler,
+                                 ctx,
+                                 qe);
                 } else {
                     queue_entry_enqueue(&ctx->sendq,
                                         &ctx->sendq_signal,
@@ -918,10 +914,14 @@ mrkrpc_call(mrkrpc_ctx_t *ctx,
 int
 mrkrpc_run(mrkrpc_ctx_t *ctx)
 {
-    assert(ctx->sendthr != NULL);
-    mrkthr_run(ctx->sendthr);
-    assert(ctx->recvthr != NULL);
-    mrkthr_run(ctx->recvthr);
+    /* sendq */
+    ctx->sendthr = mrkthr_spawn("sendthr", sendthr_loop, 1, ctx);
+    mrkthr_signal_init(&ctx->sendq_signal, ctx->sendthr);
+
+    /* recvq */
+    ctx->recvthr = mrkthr_spawn("recvthr", recvthr_loop, 1, ctx);
+    mrkthr_signal_init(&ctx->recvq_signal, ctx->recvthr);
+
     return 0;
 }
 
@@ -948,13 +948,13 @@ mrkrpc_ctx_init(mrkrpc_ctx_t *ctx)
     }
 
     /* sendq */
-    ctx->sendthr = mrkthr_new("sendthr", sendthr_loop, 1, ctx);
-    mrkthr_signal_init(&ctx->sendq_signal, ctx->sendthr);
+    ctx->sendthr = NULL;
+    mrkthr_signal_init(&ctx->sendq_signal, NULL);
     DTQUEUE_INIT(&ctx->sendq);
 
     /* recvq */
-    ctx->recvthr = mrkthr_new("recvthr", recvthr_loop, 1, ctx);
-    mrkthr_signal_init(&ctx->recvq_signal, ctx->recvthr);
+    ctx->recvthr = NULL;
+    mrkthr_signal_init(&ctx->recvq_signal, NULL);
     DTQUEUE_INIT(&ctx->recvq);
     ctx->call_timeout = 0;
 
@@ -982,8 +982,12 @@ mrkrpc_ctx_close(mrkrpc_ctx_t *ctx)
         ctx->fd = -1;
     }
 
-    mrkthr_signal_send(&ctx->sendq_signal);
-    mrkthr_signal_send(&ctx->recvq_signal);
+    if (mrkthr_signal_has_owner(&ctx->sendq_signal)) {
+        mrkthr_signal_send(&ctx->sendq_signal);
+    }
+    if (mrkthr_signal_has_owner(&ctx->recvq_signal)) {
+        mrkthr_signal_send(&ctx->recvq_signal);
+    }
 }
 
 
@@ -992,15 +996,21 @@ mrkrpc_ctx_fini(mrkrpc_ctx_t *ctx)
 {
     mrkrpc_queue_entry_t *e;
 
+    /* fd */
+    mrkrpc_ctx_close(ctx);
+
     /* XXX clean up queue entries */
     trie_fini(&ctx->pending);
     ctx->nsent = 0;
     ctx->nrecvd = 0;
 
     /* sendq */
-    mrkthr_set_interrupt(ctx->sendthr);
-    mrkthr_join(ctx->sendthr);
-    mrkthr_signal_fini(&ctx->sendq_signal);
+    if (ctx->sendthr != NULL) {
+        mrkthr_set_interrupt(ctx->sendthr);
+        mrkthr_join(ctx->sendthr);
+        mrkthr_signal_fini(&ctx->sendq_signal);
+        ctx->sendthr = NULL;
+    }
 
     while ((e = DTQUEUE_HEAD(&ctx->sendq)) != NULL) {
         DTQUEUE_DEQUEUE(&ctx->sendq, link);
@@ -1009,10 +1019,14 @@ mrkrpc_ctx_fini(mrkrpc_ctx_t *ctx)
     DTQUEUE_FINI(&ctx->sendq);
 
     /* recvq */
-    mrkthr_set_interrupt(ctx->recvthr);
-    /* won't join it because it might be blocked by recvfrom() */
-    //mrkthr_join(ctx->recvthr);
-    mrkthr_signal_fini(&ctx->recvq_signal);
+    if (ctx->recvthr != NULL) {
+        mrkthr_set_interrupt(ctx->recvthr);
+        /* won't join it because it might be blocked by recvfrom() */
+        //mrkthr_join(ctx->recvthr);
+        mrkthr_signal_fini(&ctx->recvq_signal);
+        ctx->recvthr = NULL;
+    }
+
     while ((e = DTQUEUE_HEAD(&ctx->recvq)) != NULL) {
         DTQUEUE_DEQUEUE(&ctx->recvq, link);
         queue_entry_destroy(&e);
@@ -1026,9 +1040,6 @@ mrkrpc_ctx_fini(mrkrpc_ctx_t *ctx)
 
     /* node */
     mrkrpc_node_fini(&ctx->me);
-
-    /* fd */
-    mrkrpc_ctx_close(ctx);
 
     return 0;
 }
