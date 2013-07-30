@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -111,6 +112,26 @@ mrkrpc_node_dump(mrkrpc_node_t *node)
            ntohs(a->sin_port));
 
     return 0;
+}
+
+int
+mrkrpc_node_str(mrkrpc_node_t *node, char *out, size_t sz)
+{
+    char buf[256];
+    struct sockaddr_in *a;
+
+    a = ((struct sockaddr_in *)(node->addr));
+
+#ifndef __GNUC__
+    assert(sizeof(buf) >= a->sin_len);
+#endif
+
+    return snprintf(out,
+                    sz,
+                    "<node nid=%016lx @ %s:%d>",
+                    node->nid,
+                    inet_ntop(a->sin_family, &a->sin_addr, buf, a->sin_len),
+                    ntohs(a->sin_port));
 }
 
 mrkrpc_node_t *

@@ -125,6 +125,7 @@ int mrkrpc_node_init_from_addr(mrkrpc_node_t *,
                                socklen_t);
 int mrkrpc_node_fini(mrkrpc_node_t *);
 int mrkrpc_node_dump(mrkrpc_node_t *);
+int mrkrpc_node_str(mrkrpc_node_t *, char *, size_t);
 mrkrpc_node_t *mrkrpc_make_node_from_params(mrkrpc_ctx_t *,
                                             mrkrpc_nid_t,
                                             const char *,
