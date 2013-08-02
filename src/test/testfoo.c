@@ -62,8 +62,7 @@ listener(UNUSED int argc, UNUSED void *argv[])
     mrkrpc_ctx_register_msg(&ctx, 123,
                            mrkdata_make_spec(MRKDATA_UINT64),
                            listener_handler,
-                           mrkdata_make_spec(MRKDATA_UINT64),
-                           NULL);
+                           mrkdata_make_spec(MRKDATA_UINT64));
 
     if (mrkrpc_ctx_set_me(&ctx, 0x1235, "localhost", 0x1235) != 0) {
         assert(0);
@@ -108,8 +107,7 @@ test2(void)
     mrkrpc_ctx_register_msg(&ctx, 123,
                            mrkdata_make_spec(MRKDATA_UINT64),
                            NULL,
-                           mrkdata_make_spec(MRKDATA_UINT64),
-                           NULL);
+                           mrkdata_make_spec(MRKDATA_UINT64));
 
 
     if (mrkrpc_ctx_set_me(&ctx, 0x1234, "localhost", 0x1234) != 0) {

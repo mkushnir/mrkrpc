@@ -328,7 +328,7 @@ queue_entry_fini(mrkrpc_queue_entry_t *e)
     e->sz = 0;
     e->recvdat = NULL;
     e->res = 0;
-    DTQUEUE_ENTRY_INIT(link, e);
+    DTQUEUE_ENTRY_FINI(link, e);
 }
 
 static void
@@ -439,7 +439,6 @@ queue_entry_enqueue(mrkrpc_queue_t *queue,
                     mrkthr_signal_t *signal,
                     mrkrpc_queue_entry_t *qe)
 {
-    /* tail push */
     DTQUEUE_ENQUEUE(queue, link, qe);
     mrkthr_signal_send(signal);
 }
@@ -459,6 +458,7 @@ queue_entry_dequeue(mrkrpc_queue_t *queue,
         } else {
             qe = DTQUEUE_HEAD(queue);
             DTQUEUE_DEQUEUE(queue, link);
+            DTQUEUE_ENTRY_FINI(link, qe);
             return qe;
         }
     }
@@ -490,7 +490,6 @@ queue_dump(mrkrpc_queue_t *queue)
     }
     CTRACE("end of queue");
 }
-
 
 static int
 sendthr_loop(UNUSED int argc, void *argv[])
@@ -538,6 +537,8 @@ sendthr_loop(UNUSED int argc, void *argv[])
         //CTRACE("sent %016lx", qe->sid);
 
         if (!mrkthr_signal_has_owner(&qe->signal)) {
+            trie_node_t *trn;
+
             /*
              * take care of this qe
              */
@@ -547,6 +548,11 @@ sendthr_loop(UNUSED int argc, void *argv[])
             mrkdata_datum_destroy(&qe->recvdat);
             /* this was the response sent */
             mrkdata_datum_destroy(&qe->senddat);
+            if ((trn = trie_find_exact(&ctx->pending, qe->sid)) != NULL) {
+                assert(trn->value == qe);
+                trn->value = NULL;
+                trie_remove_node(&ctx->pending, trn);
+            }
             queue_entry_destroy(&qe);
         }
     }
@@ -610,9 +616,11 @@ recvthr_loop(UNUSED int argc, void *argv[])
                                           0,
                                           (struct sockaddr *)addr,
                                           &addrlen)) < 0) {
+            /* mrkthr_recvfrom_allb() never returns 0 */
             CTRACE("EOF?");
             break;
         }
+
         ++(ctx->nrecvd);
 
         pbuf = (unsigned char *)buf;
@@ -632,7 +640,7 @@ recvthr_loop(UNUSED int argc, void *argv[])
         pbuf += ndecoded;
         nread -= ndecoded;
 
-        //CTRACE("nread=%ld header", nread);
+        //CTRACE("nread=%ld ndecoded=%ld", nread, ndecoded);
 
         /* check version */
         if ((ver = mrkdata_datum_get_field(header,
@@ -682,6 +690,7 @@ recvthr_loop(UNUSED int argc, void *argv[])
             mrkrpc_queue_entry_t *qe;
             mrkrpc_msg_entry_t *msge;
 
+            //CTRACE("seeing response ...");
             assert(trn->value != NULL);
 
             /*
@@ -735,20 +744,16 @@ recvthr_loop(UNUSED int argc, void *argv[])
                 }
 
                 //CTRACE("nread=%ld recvdat", nread);
-
-                /* optional post-procesing */
-                if (msge->resphandler != NULL) {
-                    qe->res = msge->resphandler(ctx, qe);
-                }
             }
 
             /*
              * for this assertion, see mrkrpc_call()
              */
-            assert(mrkthr_signal_has_owner(&qe->signal));
             //CTRACE("qe->signal.owner=%p", qe->signal.owner);
             //mrkthr_dump(qe->signal.owner);
+            assert(mrkthr_signal_has_owner(&qe->signal));
             mrkthr_signal_send(&qe->signal);
+            //CTRACE("signal sent");
 
         } else {
             mrkdata_datum_t *req = NULL;
@@ -756,6 +761,7 @@ recvthr_loop(UNUSED int argc, void *argv[])
             mrkrpc_queue_entry_t *qe;
             mrkrpc_node_t *from;
 
+            //CTRACE("seeing request ...");
             /*
              * Here is an incoming request.
              */
@@ -810,7 +816,7 @@ recvthr_loop(UNUSED int argc, void *argv[])
                  */
                 if (msge->reqhandler != NULL) {
 
-                    mrkthr_spawn(NULL,
+                    mrkthr_spawn("_reqhandler",
                                  _reqhandler,
                                  3,
                                  msge->reqhandler,
@@ -823,7 +829,9 @@ recvthr_loop(UNUSED int argc, void *argv[])
                 }
             }
         }
+
 CONTINUE:
+        //CTRACE("destroying header: %p", header);
         if (header != NULL) {
             mrkdata_datum_destroy(&header);
         }
@@ -863,7 +871,9 @@ _signal_subscribe_for_recvthr(UNUSED int argc, void **argv)
 static int
 signal_subscribe_for_recvthr_with_timeout(uint64_t timeout, mrkthr_signal_t *signal)
 {
-    return mrkthr_wait_for(timeout, NULL, _signal_subscribe_for_recvthr, 1, signal);
+    return mrkthr_wait_for(timeout,
+                           __FILE__ ":" "signal_subscribe_for_recvthr_with_timeout",
+                           _signal_subscribe_for_recvthr, 1, signal);
 }
 
 
@@ -901,14 +911,6 @@ mrkrpc_call(mrkrpc_ctx_t *ctx,
                                                              &qe->signal)) ==
                 MRKTHR_WAIT_TIMEOUT) {
 
-            trie_node_t *trn;
-
-            DTQUEUE_REMOVE(&ctx->sendq, link, qe);
-
-            if ((trn = trie_find_exact(&ctx->pending, qe->sid)) != NULL) {
-                trn->value = NULL;
-                trie_remove_node(&ctx->pending, trn);
-            }
         }
 
     } else {
@@ -937,6 +939,16 @@ mrkrpc_call(mrkrpc_ctx_t *ctx,
          */
         res = qe->res;
     }
+    if ((trn = trie_find_exact(&ctx->pending, qe->sid)) != NULL) {
+        trn->value = NULL;
+        trie_remove_node(&ctx->pending, trn);
+    }
+
+    if (!DTQUEUE_ORPHAN(&ctx->sendq, link, qe)) {
+        DTQUEUE_REMOVE(&ctx->sendq, link, qe);
+        DTQUEUE_ENTRY_FINI(link, qe);
+    }
+
     queue_entry_destroy(&qe);
 
     TRRET(res);
@@ -951,7 +963,6 @@ mrkrpc_run(mrkrpc_ctx_t *ctx)
 
     /* recvq */
     ctx->recvthr = mrkthr_spawn("recvthr", recvthr_loop, 1, ctx);
-    mrkthr_signal_init(&ctx->recvq_signal, ctx->recvthr);
 
     return 0;
 }
@@ -985,8 +996,6 @@ mrkrpc_ctx_init(mrkrpc_ctx_t *ctx)
 
     /* recvq */
     ctx->recvthr = NULL;
-    mrkthr_signal_init(&ctx->recvq_signal, NULL);
-    DTQUEUE_INIT(&ctx->recvq);
     ctx->call_timeout = 0;
 
     /* pending */
@@ -1015,9 +1024,6 @@ mrkrpc_ctx_close(mrkrpc_ctx_t *ctx)
 
     if (mrkthr_signal_has_owner(&ctx->sendq_signal)) {
         mrkthr_signal_send(&ctx->sendq_signal);
-    }
-    if (mrkthr_signal_has_owner(&ctx->recvq_signal)) {
-        mrkthr_signal_send(&ctx->recvq_signal);
     }
 }
 
@@ -1052,17 +1058,10 @@ mrkrpc_ctx_fini(mrkrpc_ctx_t *ctx)
     /* recvq */
     if (ctx->recvthr != NULL) {
         mrkthr_set_interrupt(ctx->recvthr);
-        /* won't join it because it might be blocked by recvfrom() */
-        //mrkthr_join(ctx->recvthr);
-        mrkthr_signal_fini(&ctx->recvq_signal);
+        /* won't join it because it might be blocked by recvfrom() ? */
+        mrkthr_join(ctx->recvthr);
         ctx->recvthr = NULL;
     }
-
-    while ((e = DTQUEUE_HEAD(&ctx->recvq)) != NULL) {
-        DTQUEUE_DEQUEUE(&ctx->recvq, link);
-        queue_entry_destroy(&e);
-    }
-    DTQUEUE_FINI(&ctx->recvq);
 
     /* ops */
     if (array_fini(&ctx->ops) != 0) {
@@ -1144,8 +1143,7 @@ mrkrpc_ctx_register_msg(mrkrpc_ctx_t *ctx,
                        uint8_t op,
                        mrkdata_spec_t *reqspec,
                        mrkrpc_recv_handler_t reqhandler,
-                       mrkdata_spec_t *respspec,
-                       mrkrpc_recv_handler_t resphandler)
+                       mrkdata_spec_t *respspec)
 {
     mrkrpc_msg_entry_t *msge;
 
@@ -1159,7 +1157,6 @@ mrkrpc_ctx_register_msg(mrkrpc_ctx_t *ctx,
     msge->reqspec = reqspec;
     msge->reqhandler = reqhandler;
     msge->respspec = respspec;
-    msge->resphandler = resphandler;
     return 0;
 }
 

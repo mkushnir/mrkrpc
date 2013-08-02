@@ -60,7 +60,6 @@ typedef struct _mrkrpc_msg_entry {
     mrkdata_spec_t *reqspec;
     mrkrpc_recv_handler_t reqhandler;
     mrkdata_spec_t *respspec;
-    mrkrpc_recv_handler_t resphandler;
 } mrkrpc_msg_entry_t;
 
 typedef DTQUEUE(_mrkrpc_queue_entry, mrkrpc_queue_t);
@@ -79,8 +78,6 @@ typedef struct _mrkrpc_ctx {
     mrkthr_signal_t sendq_signal;
 
     mrkthr_ctx_t *recvthr;
-    mrkrpc_queue_t recvq;
-    mrkthr_signal_t recvq_signal;
 
     trie_t pending;
     size_t nsent;
@@ -105,8 +102,7 @@ int mrkrpc_ctx_register_msg(mrkrpc_ctx_t *,
                             uint8_t,
                             mrkdata_spec_t *,
                             mrkrpc_recv_handler_t,
-                            mrkdata_spec_t *,
-                            mrkrpc_recv_handler_t);
+                            mrkdata_spec_t *);
 mrkrpc_msg_entry_t *mrkrpc_ctx_get_msg(mrkrpc_ctx_t *, uint8_t);
 size_t mrkrpc_ctx_get_pending_volume(mrkrpc_ctx_t *);
 size_t mrkrpc_ctx_get_pending_length(mrkrpc_ctx_t *);
