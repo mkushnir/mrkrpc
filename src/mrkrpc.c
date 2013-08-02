@@ -910,6 +910,7 @@ mrkrpc_call(mrkrpc_ctx_t *ctx,
         if ((res = signal_subscribe_for_recvthr_with_timeout(ctx->call_timeout,
                                                              &qe->signal)) ==
                 MRKTHR_WAIT_TIMEOUT) {
+            res = MRKRPC_CALL + 1;
 
         }
 
@@ -1268,5 +1269,11 @@ mrkrpc_fini(void)
     mrkdata_fini();
 
     mflags &= ~MRKRPC_MFLAG_INITIALIZED;
+}
+
+const char *
+mrkrpc_strerror(int e)
+{
+    return diag_str(e);
 }
 
