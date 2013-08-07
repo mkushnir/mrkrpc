@@ -462,7 +462,7 @@ queue_entry_dequeue(mrkrpc_queue_t *queue,
             return qe;
         }
     }
-    TRACE("exiting ...");
+    CTRACE("exiting ...");
     TRRETNULL(QUEUE_ENTRY_DEQUEUE + 1);
 }
 
@@ -557,7 +557,7 @@ sendthr_loop(UNUSED int argc, void *argv[])
         }
     }
 
-    TRACE("exiting ...");
+    CTRACE("exiting ...");
     TRRET(0);
 }
 
@@ -840,7 +840,7 @@ CONTINUE:
     free(buf);
     buf = NULL;
 
-    TRACE("exiting ...");
+    CTRACE("exiting ...");
     TRRET(0);
 }
 
@@ -1044,8 +1044,7 @@ mrkrpc_ctx_fini(mrkrpc_ctx_t *ctx)
 
     /* sendq */
     if (ctx->sendthr != NULL) {
-        mrkthr_set_interrupt(ctx->sendthr);
-        mrkthr_join(ctx->sendthr);
+        mrkthr_set_interrupt_and_join(ctx->sendthr);
         mrkthr_signal_fini(&ctx->sendq_signal);
         ctx->sendthr = NULL;
     }
@@ -1058,9 +1057,7 @@ mrkrpc_ctx_fini(mrkrpc_ctx_t *ctx)
 
     /* recvq */
     if (ctx->recvthr != NULL) {
-        mrkthr_set_interrupt(ctx->recvthr);
-        /* won't join it because it might be blocked by recvfrom() ? */
-        mrkthr_join(ctx->recvthr);
+        mrkthr_set_interrupt_and_join(ctx->recvthr);
         ctx->recvthr = NULL;
     }
 
@@ -1185,7 +1182,7 @@ mrkrpc_ctx_get_pending_volume(mrkrpc_ctx_t *ctx)
 size_t
 mrkrpc_ctx_get_pending_length(mrkrpc_ctx_t *ctx)
 {
-    return trie_get_nelems(&ctx->pending);
+    return trie_get_nvals(&ctx->pending);
 }
 
 
