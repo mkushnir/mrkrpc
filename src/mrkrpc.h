@@ -142,7 +142,7 @@ int mrkrpc_call(mrkrpc_ctx_t *,
                 mrkdata_datum_t *,
                 mrkdata_datum_t **);
 int mrkrpc_serve(mrkrpc_ctx_t *);
-const char *mrkrpc_strerror(int);
+const char *mrkrpc_diag_str(int);
 
 #ifdef __cplusplus
 }

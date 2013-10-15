@@ -920,10 +920,18 @@ mrkrpc_call(mrkrpc_ctx_t *ctx,
          * qe.
          */
         mrkthr_signal_init(&qe->signal, mrkthr_me());
-        mrkthr_signal_subscribe(&qe->signal);
-        mrkthr_signal_fini(&qe->signal);
+        if ((res = mrkthr_signal_subscribe(&qe->signal)) != 0) {
+            TRACE("mrkthr_signal_subscribe: %s", mrkthr_diag_str(res));
+            res = MRKRPC_CALL + 2;
+        }
     }
 
+    if (mflags & MRKRPC_MFLAG_SHUTDOWN) {
+        /* just give away */
+        TRRET(MRKRPC_CALL + 3);
+    }
+
+    mrkthr_signal_fini(&qe->signal);
     //TRACE("<<< C: op=%hhu nid=%016lx<-%016lx sid=%016lx", qe->recvop, qe->nid, qe->peer->nid, qe->sid);
 
     /* response */
@@ -1269,7 +1277,7 @@ mrkrpc_fini(void)
 }
 
 const char *
-mrkrpc_strerror(int e)
+mrkrpc_diag_str(int e)
 {
     return diag_str(e);
 }
