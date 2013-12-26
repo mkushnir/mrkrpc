@@ -64,7 +64,7 @@ listener(UNUSED int argc, UNUSED void *argv[])
                            listener_handler,
                            mrkdata_make_spec(MRKDATA_UINT64));
 
-    if (mrkrpc_ctx_set_me(&ctx, 0x1235, "localhost", 0x1235) != 0) {
+    if (mrkrpc_ctx_set_local_node(&ctx, 0x1235, "localhost", 0x1235) != 0) {
         assert(0);
     }
 
@@ -110,7 +110,7 @@ test2(void)
                            mrkdata_make_spec(MRKDATA_UINT64));
 
 
-    if (mrkrpc_ctx_set_me(&ctx, 0x1234, "localhost", 0x1234) != 0) {
+    if (mrkrpc_ctx_set_local_node(&ctx, 0x1234, "localhost", 0x1234) != 0) {
         assert(0);
     }
 

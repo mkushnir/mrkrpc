@@ -96,7 +96,10 @@ void mrkrpc_fini(void);
 int mrkrpc_ctx_init(mrkrpc_ctx_t *);
 void mrkrpc_ctx_close(mrkrpc_ctx_t *);
 int mrkrpc_ctx_fini(mrkrpc_ctx_t *);
-int mrkrpc_ctx_set_me(mrkrpc_ctx_t *, mrkrpc_nid_t, const char *, int);
+int mrkrpc_ctx_set_local_node(mrkrpc_ctx_t *,
+                              mrkrpc_nid_t,
+                              const char *,
+                              int);
 void mrkrpc_ctx_set_call_timeout(mrkrpc_ctx_t *, uint64_t);
 int mrkrpc_ctx_register_msg(mrkrpc_ctx_t *,
                             uint8_t,

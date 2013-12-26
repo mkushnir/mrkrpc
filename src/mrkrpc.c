@@ -1081,10 +1081,10 @@ mrkrpc_ctx_fini(mrkrpc_ctx_t *ctx)
 }
 
 int
-mrkrpc_ctx_set_me(mrkrpc_ctx_t *ctx,
-                    mrkrpc_nid_t nid,
-                    const char *hostname,
-                    int port)
+mrkrpc_ctx_set_local_node(mrkrpc_ctx_t *ctx,
+                          mrkrpc_nid_t nid,
+                          const char *hostname,
+                          int port)
 {
     struct addrinfo hints, *ai = NULL, *ain;
     char portstr[32];
@@ -1107,7 +1107,7 @@ mrkrpc_ctx_set_me(mrkrpc_ctx_t *ctx,
     }
 
     if (getaddrinfo(hostname, portstr, &hints, &ai) != 0) {
-        TRRET(MRKRPC_CTX_SET_ME + 1);
+        TRRET(MRKRPC_CTX_SET_LOCAL_NODE + 1);
     }
 
     for (ain = ai; ain != NULL; ain = ain->ai_next) {
@@ -1128,7 +1128,7 @@ mrkrpc_ctx_set_me(mrkrpc_ctx_t *ctx,
         ctx->me.addrlen = ain->ai_addrlen;
 
         if (bind(ctx->fd, ain->ai_addr, ain->ai_addrlen) != 0) {
-            TRRET(MRKRPC_CTX_SET_ME + 2);
+            TRRET(MRKRPC_CTX_SET_LOCAL_NODE + 2);
         }
 
         break;
@@ -1137,7 +1137,7 @@ mrkrpc_ctx_set_me(mrkrpc_ctx_t *ctx,
     freeaddrinfo(ai);
 
     if (ctx->fd < 0) {
-        TRRET(MRKRPC_CTX_SET_ME + 3);
+        TRRET(MRKRPC_CTX_SET_LOCAL_NODE + 3);
     }
 
     return 0;
