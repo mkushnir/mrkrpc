@@ -18,7 +18,7 @@ libmrkrpc_la_SOURCES = mrkrpc.c
 nodist_libmrkrpc_la_SOURCES = diag.c
 
 if DEBUG
-DEBUG_FLAGS = -g -O0 @CLANG_DEBUG@
+DEBUG_FLAGS = -g3 -gdwarf-2 -O0 @CLANG_DEBUG@
 else
 DEBUG_FLAGS = -DNDEBUG -O3
 endif
@@ -30,7 +30,7 @@ libmrkrpc_la_LDFLAGS = -version-info 0:0:0 -L$(libdir) -lmrkcommon -lmrkdata -lm
 SUBDIRS = . test
 
 diag.c diag.h: diag.txt
-	sh ./gen-diag
+	sh ./gen-diag mrkrpc
 
 run: all
 	for i in $(bin_PROGRAMS); do if test -x ./$$i; then LD_LIBRARY_PATH=$(libdir) ./$$i; fi; done;

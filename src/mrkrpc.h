@@ -15,6 +15,8 @@
 extern "C" {
 #endif
 
+const char *mrkrpc_diag_str(int);
+
 typedef uint64_t mrkrpc_nid_t;
 typedef uint64_t mrkrpc_sid_t;
 
@@ -45,6 +47,7 @@ typedef struct _mrkrpc_queue_entry {
     mrkdata_datum_t *recvdat;
 
     mrkthr_signal_t signal;
+    mrkthr_rwlock_t rwlock;
     /* mrkrpc_call() return value */
     int res;
 
@@ -56,11 +59,10 @@ struct _mrkrpc_ctx;
 typedef int (*mrkrpc_recv_handler_t)(struct _mrkrpc_ctx *,
                                      mrkrpc_queue_entry_t *);
 
-typedef struct _mrkrpc_msg_entry {
-    mrkdata_spec_t *reqspec;
+typedef struct _mrkrpc_op_entry {
+    mrkdata_spec_t *spec;
     mrkrpc_recv_handler_t reqhandler;
-    mrkdata_spec_t *respspec;
-} mrkrpc_msg_entry_t;
+} mrkrpc_op_entry_t;
 
 typedef DTQUEUE(_mrkrpc_queue_entry, mrkrpc_queue_t);
 
@@ -104,11 +106,10 @@ void mrkrpc_ctx_set_call_timeout(mrkrpc_ctx_t *, uint64_t);
 int mrkrpc_ctx_register_msg(mrkrpc_ctx_t *,
                             uint8_t,
                             mrkdata_spec_t *,
-                            mrkrpc_recv_handler_t,
-                            mrkdata_spec_t *);
-mrkrpc_msg_entry_t *mrkrpc_ctx_get_msg(mrkrpc_ctx_t *, uint8_t);
+                            mrkrpc_recv_handler_t);
 size_t mrkrpc_ctx_get_pending_volume(mrkrpc_ctx_t *);
 size_t mrkrpc_ctx_get_pending_length(mrkrpc_ctx_t *);
+size_t mrkrpc_ctx_get_sendq_length(mrkrpc_ctx_t *);
 size_t mrkrpc_ctx_compact_pending(mrkrpc_ctx_t *, size_t);
 
 /* node */
@@ -139,6 +140,8 @@ int mrkrpc_nodes_equal(mrkrpc_node_t *, mrkrpc_node_t *);
 
 /* operations */
 int mrkrpc_run(mrkrpc_ctx_t *);
+
+#define MRKRPC_CALL_TIMEOUT (-1)
 int mrkrpc_call(mrkrpc_ctx_t *,
                 mrkrpc_node_t *,
                 uint8_t,
