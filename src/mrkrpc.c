@@ -554,6 +554,12 @@ sendthr_loop(UNUSED int argc, void *argv[])
             }
         }
         //CTRACE("sent %hhd %016lx", qe->sendop, qe->sid);
+        if (!mrkthr_signal_has_owner(&qe->signal)) {
+            mrkrpc_node_destroy(&qe->peer);
+            mrkdata_datum_destroy(&qe->recvdat);
+            mrkdata_datum_destroy(&qe->senddat);
+            queue_entry_destroy(&qe);
+        }
     }
 
     CTRACE("exiting ...");
@@ -809,27 +815,13 @@ process_one_msg(mrkrpc_ctx_t *ctx, unsigned char *buf, ssize_t bufsz, char *addr
              * response has to be constructed and placed in qe->senddat.
              */
             if (ope->reqhandler != NULL) {
-
-                mrkthr_ctx_t *thr;
-                //void *argv[3];
-
-                //CTRACE("before spawn");
-                //queue_entry_dump(qe);
-                //D32(qe, sizeof(*qe));
-                thr = mrkthr_spawn("_reqhandler",
+                mrkthr_spawn("_reqhandler",
                              _reqhandler,
                              3,
                              ope->reqhandler,
                              ctx,
                              qe);
-                //CTRACE("spawned:");
-                //mrkthr_dump(thr);
-                //argv[0] = ope->reqhandler;
-                //argv[1] = ctx;
-                //argv[2] = qe;
-                //_reqhandler(3, argv);
             } else {
-                /* discard it */
                 CTRACE("discarding this qe without reqhandler:");
                 queue_entry_dump(qe);
 
@@ -1309,8 +1301,6 @@ mrkrpc_init(void)
      */
     srandomdev();
 
-    trie_init(&host_infos);
-
     sidbase = (((uint64_t)random()) << 32);
     if ((header_spec = mrkdata_make_spec(MRKDATA_STRUCT)) == NULL) {
         FAIL("mrkdata_make_spec");
@@ -1345,8 +1335,6 @@ mrkrpc_fini(void)
     }
 
     mrkdata_fini();
-
-    trie_fini(&host_infos);
 
     mflags &= ~MRKRPC_MFLAG_INITIALIZED;
 }
