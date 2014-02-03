@@ -32,7 +32,7 @@ MEMDEBUG_DECLARE(mrkrpc);
 static unsigned mflags = 0;
 
 #define MRKRPC_VERSION 0x81
-#define MRKRPC_MAX_MSGS 256 /* uint8_t */
+#define MRKRPC_MAX_OPS 256 /* uint8_t */
 #define QUEUE_ENTRY_DEFAULT_BUFSZ 8192
 #define NODE_DEFAULT_ADDRLEN 256
 
@@ -374,6 +374,7 @@ make_header(uint8_t op, mrkrpc_nid_t nid, mrkrpc_sid_t sid)
     mrkdata_datum_add_field(header, mrkdata_datum_make_u8(op));
     mrkdata_datum_add_field(header, mrkdata_datum_make_u64(nid));
     mrkdata_datum_add_field(header, mrkdata_datum_make_u64(sid));
+    mrkdata_datum_add_field(header, mrkdata_datum_make_u64(0));
     return header;
 }
 
@@ -570,7 +571,7 @@ static mrkrpc_op_entry_t *
 get_op_entry(mrkrpc_ctx_t *ctx, uint8_t op)
 {
 #ifndef __GNUC__
-    assert(op < MRKRPC_MAX_MSGS);
+    assert(op < MRKRPC_MAX_OPS);
 #endif
     return array_get(&ctx->ops, op);
 }
@@ -1059,7 +1060,7 @@ mrkrpc_ctx_init(mrkrpc_ctx_t *ctx)
     ctx->fd = -1;
 
     /* ops */
-    if (array_init(&ctx->ops, sizeof(mrkrpc_op_entry_t), MRKRPC_MAX_MSGS,
+    if (array_init(&ctx->ops, sizeof(mrkrpc_op_entry_t), MRKRPC_MAX_OPS,
                    (array_initializer_t)null_init,
                    (array_finalizer_t)null_fini) != 0) {
         FAIL("array_init");
@@ -1313,6 +1314,8 @@ mrkrpc_init(void)
     mrkdata_spec_add_field(header_spec, mrkdata_make_spec(MRKDATA_UINT64));
     /* sid */
     mrkdata_spec_add_field(header_spec, mrkdata_make_spec(MRKDATA_UINT64));
+    /* frame number */
+    mrkdata_spec_add_field(header_spec, mrkdata_make_spec(MRKDATA_UINT64));
 
     /* discover default message size */
     mrkrpc_ctx_init(&ctx);
@@ -1333,6 +1336,8 @@ mrkrpc_fini(void)
     if (! (mflags & MRKRPC_MFLAG_INITIALIZED)) {
         return;
     }
+
+    mrkdata_spec_destroy(&header_spec);
 
     mrkdata_fini();
 
