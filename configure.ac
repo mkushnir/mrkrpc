@@ -38,6 +38,7 @@ AC_PROG_INSTALL
 
 LT_INIT
 AM_INIT_AUTOMAKE
+AM_SILENT_RULES([yes])
 
 dnl AM_MAINTAINER_MODE
 
@@ -48,6 +49,8 @@ AC_CHECK_HEADERS([syslog.h])
 AC_CHECK_HEADERS([netdb.h])
 AC_CHECK_HEADERS([netinet/in.h])
 AC_CHECK_HEADERS([sys/socket.h])
+AC_CHECK_HEADERS([limits.h])
+AC_CHECK_HEADERS([sys/limits.h])
 
 AC_C_CONST
 AC_C_INLINE
