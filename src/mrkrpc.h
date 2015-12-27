@@ -6,7 +6,7 @@
 #include <sys/socket.h>
 
 #include <mrkcommon/array.h>
-#include <mrkcommon/trie.h>
+#include <mrkcommon/btrie.h>
 #include <mrkcommon/dtqueue.h>
 #include <mrkthr.h>
 #include <mrkdata.h>
@@ -81,7 +81,7 @@ typedef struct _mrkrpc_ctx {
 
     mrkthr_ctx_t *recvthr;
 
-    trie_t pending;
+    btrie_t pending;
     size_t nsent;
     size_t nrecvd;
 

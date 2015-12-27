@@ -15,7 +15,7 @@
 #include <mrkcommon/array.h>
 //#define TRRET_DEBUG_VERBOSE
 #include <mrkcommon/dumpm.h>
-#include <mrkcommon/trie.h>
+#include <mrkcommon/btrie.h>
 #include <mrkcommon/util.h>
 #include <mrkdata.h>
 #include <mrkthr.h>
@@ -520,9 +520,9 @@ sendthr_loop(UNUSED int argc, void *argv[])
          * or mrkrpc_call() will retrieve it at response time.
          */
         if (mrkthr_signal_has_owner(&qe->signal)) {
-            trie_node_t *trn;
-            if ((trn = trie_add_node(&ctx->pending, qe->sid)) == NULL) {
-                FAIL("trie_add_node");
+            btrie_node_t *trn;
+            if ((trn = btrie_add_node(&ctx->pending, qe->sid)) == NULL) {
+                FAIL("btrie_add_node");
             }
             trn->value = qe;
         }
@@ -620,7 +620,7 @@ process_one_msg(mrkrpc_ctx_t *ctx, unsigned char *buf, ssize_t bufsz, char *addr
     mrkdata_datum_t    *op = NULL;
     mrkdata_datum_t    *nid = NULL;
     mrkdata_datum_t    *sid = NULL;
-    trie_node_t        *trn = NULL;
+    btrie_node_t        *trn = NULL;
     unsigned char      *pbuf = buf;
 
     /* unpack header */
@@ -680,7 +680,7 @@ process_one_msg(mrkrpc_ctx_t *ctx, unsigned char *buf, ssize_t bufsz, char *addr
 
     /* find the saved queue entry under header:sid */
 
-    if ((trn = trie_find_exact(&ctx->pending, sid->value.u64)) != NULL) {
+    if ((trn = btrie_find_exact(&ctx->pending, sid->value.u64)) != NULL) {
         mrkrpc_queue_entry_t *qe;
         mrkrpc_op_entry_t *ope;
 
@@ -694,7 +694,7 @@ process_one_msg(mrkrpc_ctx_t *ctx, unsigned char *buf, ssize_t bufsz, char *addr
          */
 
         qe = trn->value;
-        trie_remove_node(&ctx->pending, trn);
+        btrie_remove_node(&ctx->pending, trn);
 
         /*
          * Check nid
@@ -957,7 +957,7 @@ mrkrpc_call(mrkrpc_ctx_t *ctx,
 {
     int res = 0;
     mrkrpc_queue_entry_t *qe = NULL;
-    trie_node_t *trn;
+    btrie_node_t *trn;
 
     if (arg != NULL && arg->packsz > QUEUE_ENTRY_DEFAULT_BUFSZ) {
         TRACE("arg->packsz: %ld > %d", arg->packsz, QUEUE_ENTRY_DEFAULT_BUFSZ);
@@ -1011,10 +1011,10 @@ mrkrpc_call(mrkrpc_ctx_t *ctx,
          */
         res = qe->res;
     }
-    if ((trn = trie_find_exact(&ctx->pending, qe->sid)) != NULL) {
+    if ((trn = btrie_find_exact(&ctx->pending, qe->sid)) != NULL) {
         assert(trn->value == qe);
         trn->value = NULL;
-        trie_remove_node(&ctx->pending, trn);
+        btrie_remove_node(&ctx->pending, trn);
     }
 
     if (!DTQUEUE_ORPHAN(&ctx->sendq, link, qe)) {
@@ -1076,7 +1076,7 @@ mrkrpc_ctx_init(mrkrpc_ctx_t *ctx)
     ctx->call_timeout = 0;
 
     /* pending */
-    trie_init(&ctx->pending);
+    btrie_init(&ctx->pending);
     ctx->nsent = 0;
     ctx->nrecvd = 0;
 
@@ -1112,7 +1112,7 @@ mrkrpc_ctx_fini(mrkrpc_ctx_t *ctx)
     mrkrpc_ctx_close(ctx);
 
     /* XXX clean up queue entries */
-    trie_fini(&ctx->pending);
+    btrie_fini(&ctx->pending);
     ctx->nsent = 0;
     ctx->nrecvd = 0;
 
@@ -1245,13 +1245,13 @@ mrkrpc_ctx_register_msg(mrkrpc_ctx_t *ctx,
 size_t
 mrkrpc_ctx_get_pending_volume(mrkrpc_ctx_t *ctx)
 {
-    return trie_get_volume(&ctx->pending);
+    return btrie_get_volume(&ctx->pending);
 }
 
 size_t
 mrkrpc_ctx_get_pending_length(mrkrpc_ctx_t *ctx)
 {
-    return trie_get_nvals(&ctx->pending);
+    return btrie_get_nvals(&ctx->pending);
 }
 
 size_t
@@ -1266,9 +1266,9 @@ mrkrpc_ctx_compact_pending(mrkrpc_ctx_t *ctx, size_t threshold)
 {
     size_t length;
 
-    length = trie_get_volume(&ctx->pending);
+    length = btrie_get_volume(&ctx->pending);
     if (length > threshold) {
-        trie_cleanup(&ctx->pending);
+        btrie_cleanup(&ctx->pending);
     }
     return length;
 }
