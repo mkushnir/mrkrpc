@@ -1,7 +1,7 @@
 AUTOMAKE_OPTIONS = foreign
 
 distdir = ../$(PACKAGE)-$(VERSION)/src
-dist_HEADERS =
+dist_HEADERS = mrkrpc_private.h
 
 BUILT_SOURCES = diag.c diag.h
 EXTRA_DIST = diag.txt gen-diag
@@ -12,7 +12,7 @@ lib_LTLIBRARIES = libmrkrpc.la
 
 nobase_include_HEADERS = mrkrpc.h
 
-noinst_HEADERS = mrkrpc_private.h
+noinst_HEADERS =
 
 libmrkrpc_la_SOURCES = mrkrpc.c
 nodist_libmrkrpc_la_SOURCES = diag.c
