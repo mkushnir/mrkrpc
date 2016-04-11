@@ -5,11 +5,11 @@ CLEANFILES = *.core
 noinst_PROGRAMS=testfoo testtimeout
 
 distdir = ../../$(PACKAGE)-$(VERSION)/src/test
-dist_HEADERS = unittest.h
+dist_HEADERS =
 
 BUILT_SOURCES = ../diag.c ../diag.h
 
-noinst_HEADERS = ../mrkrpc.h
+noinst_HEADERS = unittest.h ../mrkrpc.h
 
 if DEBUG
 DEBUG_FLAGS = -g -O0 @CLANG_DEBUG@
