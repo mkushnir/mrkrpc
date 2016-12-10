@@ -73,7 +73,7 @@ typedef struct _mrkrpc_ctx {
 
     mrkrpc_node_t me;
     int fd;
-    array_t ops;
+    mnarray_t ops;
 
     mrkthr_ctx_t *sendthr;
     mrkrpc_queue_t sendq;
@@ -81,7 +81,7 @@ typedef struct _mrkrpc_ctx {
 
     mrkthr_ctx_t *recvthr;
 
-    btrie_t pending;
+    mnbtrie_t pending;
     size_t nsent;
     size_t nrecvd;
 

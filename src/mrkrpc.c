@@ -520,7 +520,7 @@ sendthr_loop(UNUSED int argc, void *argv[])
          * or mrkrpc_call() will retrieve it at response time.
          */
         if (mrkthr_signal_has_owner(&qe->signal)) {
-            btrie_node_t *trn;
+            mnbtrie_node_t *trn;
             if ((trn = btrie_add_node(&ctx->pending, qe->sid)) == NULL) {
                 FAIL("btrie_add_node");
             }
@@ -620,7 +620,7 @@ process_one_msg(mrkrpc_ctx_t *ctx, unsigned char *buf, ssize_t bufsz, char *addr
     mrkdata_datum_t    *op = NULL;
     mrkdata_datum_t    *nid = NULL;
     mrkdata_datum_t    *sid = NULL;
-    btrie_node_t        *trn = NULL;
+    mnbtrie_node_t        *trn = NULL;
     unsigned char      *pbuf = buf;
 
     /* unpack header */
@@ -957,7 +957,7 @@ mrkrpc_call(mrkrpc_ctx_t *ctx,
 {
     int res = 0;
     mrkrpc_queue_entry_t *qe = NULL;
-    btrie_node_t *trn;
+    mnbtrie_node_t *trn;
 
     if (arg != NULL && arg->packsz > QUEUE_ENTRY_DEFAULT_BUFSZ) {
         TRACE("arg->packsz: %ld > %d", arg->packsz, QUEUE_ENTRY_DEFAULT_BUFSZ);
