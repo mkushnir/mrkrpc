@@ -41,12 +41,13 @@ listener_handler(UNUSED mrkrpc_ctx_t *ctx,
            UNUSED mrkrpc_queue_entry_t *qe)
 {
     //D8(qe->peer->addr, qe->peer->addrlen);
-    //TRACE("op=%02u nid=%016lx sid=%016lx", qe->op, qe->nid, qe->sid);
-    //mrkdata_datum_dump(qe->recvdat);
+    CTRACE(">>> L0: op=%02u to nid=%016lx sid=%016lx", qe->sendop, qe->peer->nid, qe->sid);
+    mrkdata_datum_dump(qe->recvdat);
+    TRACEC("\n");
     qe->sendop = 123;
     qe->senddat = qe->recvdat;
     qe->recvdat = NULL;
-    CTRACE(">>> L: op=%02u to nid=%016lx sid=%016lx", qe->sendop, qe->peer->nid, qe->sid);
+    CTRACE(">>> L1: op=%02u to nid=%016lx sid=%016lx", qe->sendop, qe->peer->nid, qe->sid);
     return 0;
 }
 
@@ -71,6 +72,7 @@ listener(UNUSED int argc, UNUSED void *argv[])
         assert(0);
     }
 
+    CTRACE("serving ...");
     mrkrpc_serve(&ctx);
 
     if (mrkrpc_ctx_fini(&ctx) != 0) {
@@ -108,7 +110,7 @@ test2(void)
                            NULL);
 
 
-    if (mrkrpc_ctx_set_local_node(&ctx, 0x1234, "localhost", 0x1234) != 0) {
+    if (mrkrpc_ctx_set_local_node(&ctx, 0x1232, "localhost", 0x1232) != 0) {
         assert(0);
     }
 
@@ -117,7 +119,9 @@ test2(void)
     }
 
     spec = mrkdata_make_spec(MRKDATA_UINT64);
+    mrkdata_spec_dump(spec);
     dat = mrkdata_datum_from_spec(spec, (void *)0x12345678, 0);
+    mrkdata_datum_dump(dat);
 
     rcpt = mrkrpc_make_node_from_params(&ctx, 0x1235, "localhost", 0x1235);
 

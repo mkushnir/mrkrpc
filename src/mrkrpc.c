@@ -612,7 +612,11 @@ _reqhandler(UNUSED int argc, void **argv)
 
 
 static ssize_t
-process_one_msg(mrkrpc_ctx_t *ctx, unsigned char *buf, ssize_t bufsz, char *addr, socklen_t addrlen)
+process_one_msg(mrkrpc_ctx_t *ctx,
+                unsigned char *buf,
+                ssize_t bufsz,
+                char *addr,
+                socklen_t addrlen)
 {
     ssize_t             ndecoded;
     mrkdata_datum_t    *header = NULL;
@@ -620,7 +624,7 @@ process_one_msg(mrkrpc_ctx_t *ctx, unsigned char *buf, ssize_t bufsz, char *addr
     mrkdata_datum_t    *op = NULL;
     mrkdata_datum_t    *nid = NULL;
     mrkdata_datum_t    *sid = NULL;
-    mnbtrie_node_t        *trn = NULL;
+    mnbtrie_node_t     *trn = NULL;
     unsigned char      *pbuf = buf;
 
     /* unpack header */
@@ -896,7 +900,6 @@ recvthr_loop(UNUSED int argc, void *argv[])
                 break;
             }
         }
-
     }
 
     free(buf);
@@ -943,8 +946,7 @@ enroll_queue_entry(int argc, void **argv)
      * Provide for the retval both for the "wait for" call and a regular
      * one.
      */
-    mrkthr_set_retval(res);
-    return res;
+    MRKTHRET(res);
 }
 
 
@@ -1296,6 +1298,7 @@ mrkrpc_init(void)
 
     MEMDEBUG_REGISTER(mrkrpc);
 
+    mrkdata_init();
     /*
      * High 32 bits of sid will be random. Low 32 bits will be
      * incrementing.

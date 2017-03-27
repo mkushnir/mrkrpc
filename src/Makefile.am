@@ -30,7 +30,7 @@ libmrkrpc_la_LDFLAGS = -version-info 0:0:0 -L$(libdir) -lmrkcommon -lmrkdata -lm
 SUBDIRS = . test
 
 diag.c diag.h: diag.txt
-	$(AM_V_GEN) /bin/sh ./gen-diag mrkrpc
+	$(AM_V_GEN) cat diag.txt | sort -u | /bin/sh ./gen-diag mrkrpc
 
 run: all
 	for i in $(bin_PROGRAMS); do if test -x ./$$i; then LD_LIBRARY_PATH=$(libdir) ./$$i; fi; done;

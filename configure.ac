@@ -65,6 +65,15 @@ AC_CHECK_FUNCS([memset])
 AC_CHECK_FUNCS([socket])
 AC_CHECK_FUNCS([strdup])
 
+AC_CHECK_TYPE([struct sf_hdtr],
+                [AC_MSG_NOTICE([struct sf_hdtr is defined])
+                 AC_DEFINE([HAVE_SF_HDTR], [1], [Define to 1 if struct sf_hdtr is defined])
+                ],
+                [ ], [[
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/uio.h>
+]])
 
 AC_PRESERVE_HELP_ORDER
 
