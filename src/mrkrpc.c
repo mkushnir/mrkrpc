@@ -1303,7 +1303,7 @@ mrkrpc_init(void)
      * High 32 bits of sid will be random. Low 32 bits will be
      * incrementing.
      */
-    srandomdev();
+    //srandomdev();
 
     sidbase = (((uint64_t)random()) << 32);
     if ((header_spec = mrkdata_make_spec(MRKDATA_STRUCT)) == NULL) {
