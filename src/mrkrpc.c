@@ -977,7 +977,7 @@ mrkrpc_call(mrkrpc_ctx_t *ctx,
                                    "[mrkthr_wait_for enroll_queue_entry]",
                                    enroll_queue_entry,
                                    2,
-                                   ctx, qe)) == MRKTHR_WAIT_TIMEOUT) {
+                                   ctx, qe)) == (int)MRKTHR_WAIT_TIMEOUT) {
             res = MRKRPC_CALL_TIMEOUT;
 
         } else if (res != 0) {
