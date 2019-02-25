@@ -1,5 +1,3 @@
-AUTOMAKE_OPTIONS = foreign
-
 distdir = ../$(PACKAGE)-$(VERSION)/src
 dist_HEADERS = mrkrpc_private.h
 
