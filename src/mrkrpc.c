@@ -103,7 +103,7 @@ mrkrpc_node_dump(mrkrpc_node_t *node)
 
     a = ((struct sockaddr_in *)(node->addr));
 
-#ifndef __GNUC__
+#ifndef __GCC__
     assert(sizeof(buf) >= a->sin_len);
 #endif
 
@@ -123,7 +123,7 @@ mrkrpc_node_str(mrkrpc_node_t *node, char *out, size_t sz)
 
     a = ((struct sockaddr_in *)(node->addr));
 
-#ifndef __GNUC__
+#ifndef __GCC__
     assert(sizeof(buf) >= a->sin_len);
 #endif
 
@@ -570,7 +570,7 @@ sendthr_loop(UNUSED int argc, void *argv[])
 static mrkrpc_op_entry_t *
 get_op_entry(mrkrpc_ctx_t *ctx, uint8_t op)
 {
-#ifndef __GNUC__
+#ifndef __GCC__
     assert(op < MRKRPC_MAX_OPS);
 #endif
     return array_get(&ctx->ops, op);
@@ -1232,7 +1232,7 @@ mrkrpc_ctx_register_msg(mrkrpc_ctx_t *ctx,
 {
     mrkrpc_op_entry_t *ope;
 
-#ifndef __GNUC__
+#ifndef __GCC__
     assert(op < MRKRPC_MAX_MSGS);
 #endif
 
